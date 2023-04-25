@@ -121,7 +121,16 @@
          This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
          and by most of web interfaces (embedded UI, Grafana, Redash, ...).
       -->
-    <http_port>8123</http_port>
+    <!-- <https_port>8443</https_port> -->
+
+     <!-- Setting that allows to download files from directory.
+          It is essentially used for completing HTTP-01 challenge and fetching
+          certificates from Let's Encrypt. (Port should be equal to 80)
+      -->
+    <file_system>
+        <port>8124</port>
+        <base_directory>/etc/clickhouse-server/export</base_directory>
+    </file_system>
 
     <!-- Port for interaction by native protocol with:
          - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
@@ -146,7 +155,7 @@
          You have to configure certificate to enable this interface.
          See the openSSL section below.
     -->
-    <!-- <https_port>8443</https_port> -->
+    <https_port>8443</https_port>
 
     <!-- Native interface with TLS.
          You have to configure certificate to enable this interface.
@@ -269,8 +278,8 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
+             <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
@@ -296,6 +305,13 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
+
+    <!--
+    <LetsEncrypt>
+        <enableAutomaticIssue>false</enableAutomaticIssue>
+        <reissueHoursBefore>100000</reissueHoursBefore>
+    </LetsEncrypt>
+    -->
 
     <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
     <!--

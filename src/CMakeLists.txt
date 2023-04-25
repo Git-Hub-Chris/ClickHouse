@@ -348,6 +348,7 @@ target_link_libraries(clickhouse_common_io
             ch_contrib::re2
             ch_contrib::re2_st
             ch_contrib::zlib
+            ch_contrib::acme-lw
             pcg_random
             Poco::Foundation
 )
@@ -572,6 +573,10 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::annoy)
     dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
+
+if (TARGET ch_contrib::acme-lw)
+    dbms_target_link_libraries(PUBLIC ch_contrib::acme-lw)
 endif()
 
 if (TARGET ch_rust::skim)

@@ -4,6 +4,7 @@
 
 #if USE_SSL
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 
@@ -14,6 +15,7 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
+#include <Server/CertificateIssuer.h>
 
 
 namespace DB
@@ -44,6 +46,9 @@ public:
 
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
+
+    /// Callback for Let's Enrypt integration
+    void reloadCertificates();
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl);
@@ -77,6 +82,8 @@ private:
 
     MultiVersion<Data> data;
     bool init_was_not_made = true;
+
+    MultiVersion<CertificateIssuer::LetsEncryptConfigurationData> let_encrypt_configuration_data;
 };
 
 }
