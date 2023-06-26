@@ -1256,37 +1256,63 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::pair<UInt64, bool> getLimitUIntValueAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
-    if (!isNativeNumber(type))
+    if (!isNumber(type))
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
             type->getName(), expr);
 
-    Field converted = convertFieldToType(field, DataTypeUInt64());
+    Field converted = convertFieldToType(field, DataTypeInt128());
     if (converted.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field), expr);
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The absolute value {} of {} expression is not representable as UInt64",
+                        applyVisitor(FieldVisitorToString(), field), expr);
 
-    return converted.safeGet<UInt64>();
+    Int128 origin_val = converted.safeGet<Int128>();
+    bool is_negative = origin_val < 0;
+    origin_val = is_negative ? (0 - origin_val) : origin_val;
+
+    if (origin_val > Int128(UINT64_MAX))
+    {
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The absolute value {} of {} expression is not representable as UInt64",
+                        applyVisitor(FieldVisitorToString(), field), expr);
+    }
+
+    UInt64 val = UInt64(origin_val);
+    return {val, is_negative};
 }
 
-
-static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context)
+struct LimitInfo
 {
-    UInt64 length = 0;
-    UInt64 offset = 0;
+    bool is_negative = false;
+    UInt64 limit_length = 0;
+    UInt64 limit_offset = 0;
+};
+
+static LimitInfo getLimitInfo(const ASTSelectQuery & query, const ContextPtr & context)
+{
+    LimitInfo info;
 
     if (query.limitLength())
     {
-        length = getLimitUIntValue(query.limitLength(), context, "LIMIT");
-        if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+        std::tie(info.limit_length, info.is_negative) = getLimitUIntValueAndSign(query.limitLength(), context, "LIMIT");
+
+        if (query.limitOffset() && info.limit_length)
+        {
+            bool is_offset_negative = false;
+            std::tie(info.limit_offset, is_offset_negative) = getLimitUIntValueAndSign(query.limitOffset(), context, "OFFSET");
+
+            if (info.is_negative != is_offset_negative && info.limit_offset)
+            {
+                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The sign of limit and offset must be the same");
+            }
+        }
     }
     else if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
-    return {length, offset};
+        std::tie(info.limit_offset, info.is_negative) = getLimitUIntValueAndSign(query.limitOffset(), context, "OFFSET");
+
+    return info;
 }
 
 
@@ -1295,11 +1321,11 @@ UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, 
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context_);
-        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+        LimitInfo limit_info = getLimitInfo(query, context_);
+        if (limit_info.is_negative || limit_info.limit_length > std::numeric_limits<UInt64>::max() - limit_info.limit_offset)
             return 0;
 
-        return limit_length + limit_offset;
+        return limit_info.limit_length + limit_info.limit_offset;
     }
     return 0;
 }
@@ -2375,7 +2401,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
     UInt64 max_block_size = settings.max_block_size;
 
-    auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+    LimitInfo limit_info = getLimitInfo(query, context);
 
     auto local_limits = getStorageLimits(*context, options);
 
@@ -2384,7 +2410,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
      */
-    if (!query.distinct
+    if (!limit_info.is_negative
+        && !query.distinct
         && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
@@ -2397,16 +2424,16 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query_analyzer->hasAggregation()
         && !query_analyzer->hasWindow()
         && query.limitLength()
-        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+        && limit_info.limit_length <= std::numeric_limits<UInt64>::max() - limit_info.limit_offset)
     {
-        if (limit_length + limit_offset < max_block_size)
+        if (limit_info.limit_length + limit_info.limit_offset < max_block_size)
         {
-            max_block_size = std::max<UInt64>(1, limit_length + limit_offset);
+            max_block_size = std::max<UInt64>(1, limit_info.limit_length + limit_info.limit_offset);
             max_threads_execute_query = max_streams = 1;
         }
-        if (limit_length + limit_offset < local_limits.local_limits.size_limits.max_rows)
+        if (limit_info.limit_length + limit_info.limit_offset < local_limits.local_limits.size_limits.max_rows)
         {
-            query_info.limit = limit_length + limit_offset;
+            query_info.limit = limit_info.limit_length + limit_info.limit_offset;
         }
     }
 
@@ -2975,9 +3002,9 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy())
         {
-            auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-            if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-                limit_for_distinct = limit_length + limit_offset;
+            LimitInfo limit_info = getLimitInfo(query, context);
+            if (!limit_info.is_negative && limit_info.limit_length <= std::numeric_limits<UInt64>::max() - limit_info.limit_offset)
+                limit_for_distinct = limit_info.limit_length + limit_info.limit_offset;
         }
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
@@ -3005,20 +3032,22 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     /// If there is LIMIT
     if (query.limitLength())
     {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        LimitInfo limit_info = getLimitInfo(query, context);
 
         if (do_not_skip_offset)
         {
-            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+            if (limit_info.limit_length > std::numeric_limits<UInt64>::max() - limit_info.limit_offset)
                 return;
 
-            limit_length += limit_offset;
-            limit_offset = 0;
+            limit_info.limit_length += limit_info.limit_offset;
+            limit_info.limit_offset = 0;
         }
 
         const Settings & settings = context->getSettingsRef();
 
-        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset, settings.exact_rows_before_limit);
+        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_info.limit_length,
+                                                 limit_info.limit_offset, settings.exact_rows_before_limit,
+                                                 false, limit_info.is_negative);
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
@@ -3028,6 +3057,21 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     }
 }
 
+static UInt64 getLimitByUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isNativeNumber(type))
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
+                        type->getName(), expr);
+
+    Field converted = convertFieldToType(field, DataTypeUInt64());
+    if (converted.isNull())
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
+                        applyVisitor(FieldVisitorToString(), field), expr);
+
+    return converted.safeGet<UInt64>();
+}
 
 void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
 {
@@ -3039,8 +3083,8 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    UInt64 length = getLimitUIntValue(query.limitByLength(), context, "LIMIT");
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
+    UInt64 length = getLimitByUIntValue(query.limitByLength(), context, "LIMIT");
+    UInt64 offset = (query.limitByOffset() ? getLimitByUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
 
     auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentDataStream(), length, offset, columns);
     query_plan.addStep(std::move(limit_by));
@@ -3101,21 +3145,25 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
-        UInt64 limit_length;
-        UInt64 limit_offset;
-        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
+        LimitInfo limit_info = getLimitInfo(query, context);
 
         SortDescription order_descr;
         if (query.limit_with_ties)
         {
+            if (limit_info.is_negative)
+                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Negative LIMIT WITH TIES");
+
             if (!query.orderBy())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
+
             order_descr = getSortDescription(query, context);
         }
 
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentDataStream(),
-                limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                limit_info.limit_length, limit_info.limit_offset,
+                always_read_till_end, query.limit_with_ties,
+                limit_info.is_negative, order_descr);
 
         if (query.limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");
@@ -3131,11 +3179,9 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     /// If there is not a LIMIT but an offset
     if (!query.limitLength() && query.limitOffset())
     {
-        UInt64 limit_length;
-        UInt64 limit_offset;
-        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
+        LimitInfo limit_info = getLimitInfo(query, context);
 
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_info.limit_offset, limit_info.is_negative);
         query_plan.addStep(std::move(offsets_step));
     }
 }

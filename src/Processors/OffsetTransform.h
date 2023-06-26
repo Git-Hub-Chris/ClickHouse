@@ -13,7 +13,7 @@ namespace DB
 class OffsetTransform final : public IProcessor
 {
 private:
-    UInt64 offset;
+    const UInt64 offset;
     UInt64 rows_read = 0; /// including the last read block
 
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
@@ -27,19 +27,46 @@ private:
         InputPort * input_port = nullptr;
         OutputPort * output_port = nullptr;
         bool is_finished = false;
+
+        /// When offset is negative,
+        /// a input port is finished does not mean its output port need to be finished.
+        bool is_input_port_finished = false;
+        bool is_output_port_finished = false;
     };
 
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
+    size_t num_finished_input_port = 0; /// used when offset is negative
+    size_t num_finished_output_port = 0; /// used when offset is negative
+
+    struct QueueElement
+    {
+        Chunk chunk;
+        size_t port;
+    };
+
+    const bool is_negative;
+    std::list<QueueElement> queue; /// used when offset is negative, storing at least offset rows
+    UInt64 rows_in_queue = 0;
+
+    QueueElement popAndCutIfNeeded();
+    void queuePushBack(QueueElement & element);
+    QueueElement queuePopFront();
+    void skipChunksForFinishedOutputPorts();
+    Status loopPop();
+
+    Status prepareNonNegative(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/);
+    Status prepareNegative(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/);
 
 public:
-    OffsetTransform(const Block & header_, UInt64 offset_, size_t num_streams = 1);
+    OffsetTransform(const Block & header_, UInt64 offset_, size_t num_streams = 1, bool is_negative_ = false);
 
     String getName() const override { return "Offset"; }
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
-    Status preparePair(PortsData & data);
+    Status preparePairNonNegative(PortsData & data);
+    void preparePairNegative(size_t pos);
     void splitChunk(PortsData & data) const;
 
     InputPort & getInputPort() { return inputs.front(); }

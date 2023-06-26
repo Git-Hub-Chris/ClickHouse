@@ -11,13 +11,17 @@ namespace ErrorCodes
 
 LimitTransform::LimitTransform(
     const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
-    bool always_read_till_end_, bool with_ties_,
+    bool always_read_till_end_, bool with_ties_, bool is_negative_,
     SortDescription description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , limit(limit_), offset(offset_)
-    , always_read_till_end(always_read_till_end_)
-    , with_ties(with_ties_), description(std::move(description_))
+    , always_read_till_end(always_read_till_end_), with_ties(with_ties_)
+    , description(std::move(description_)), limit_is_unreachable(limit > std::numeric_limits<UInt64>::max() - offset)
+    , is_negative(is_negative_)
 {
+    if (is_negative)
+        rows_to_keep = limit_is_unreachable ? offset : limit + offset;
+
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");
 
@@ -59,11 +63,102 @@ IProcessor::Status LimitTransform::prepare(
         const PortNumbers & updated_input_ports,
         const PortNumbers & updated_output_ports)
 {
+    return is_negative ? prepareNegative(updated_input_ports, updated_output_ports)
+                       : prepareNonNegative(updated_input_ports, updated_output_ports);
+}
+
+IProcessor::Status LimitTransform::prepareNegative(
+    const PortNumbers & updated_input_ports,
+    const PortNumbers & updated_output_ports)
+{
+    if (num_finished_input_port == ports_data.size())
+    {
+        /// All input ports are finished. Need to get chunks from the queue and do push.
+        return loopPop();
+    }
+
+    bool has_full_port = false;
+
+    /// When limit is unreachable, need to get all rows before offset.
+    /// Pop some chunks here to avoid too many chunks in the queue.
+    /// We pop a chunk only if cut is not needed.
+    if (limit_is_unreachable)
+    {
+        while (true)
+        {
+            skipChunksForFinishedOutputPorts();
+
+            if (num_finished_output_port == ports_data.size())
+            {
+                if (always_read_till_end)
+                    break;
+
+                for (auto & data : ports_data)
+                {
+                    if (!data.is_input_port_finished)
+                        data.input_port->close();
+                }
+
+                queue.clear();
+                return Status::Finished;
+            }
+
+            if (queue.empty() || rows_to_keep > rows_in_queue - queue.front().chunk.getNumRows())
+                break;
+
+            /// Check can push
+            if (!ports_data[queue.front().port].output_port->canPush())
+            {
+                has_full_port = true;
+                break;
+            }
+
+            /// Pop a chunk from queue and push it to its output port
+            QueueElement front = queuePopFront();
+            ports_data[front.port].output_port->push(std::move(front.chunk));
+            has_full_port = true;
+        }
+    }
+
+    for (auto pos : updated_input_ports)
+        preparePairNegative(pos);
+
+    for (auto pos : updated_output_ports)
+        preparePairNegative(pos);
+
+    if (!always_read_till_end && num_finished_output_port == ports_data.size())
+    {
+        for (auto & data : ports_data)
+        {
+            if (!data.is_input_port_finished)
+                data.input_port->close();
+        }
+
+        queue.clear();
+        return Status::Finished;
+    }
+
+    if (num_finished_input_port == ports_data.size())
+    {
+        /// All input ports are finished. Need to get chunks from the queue and do push.
+        return loopPop();
+    }
+
+    if (has_full_port)
+        return Status::PortFull;
+
+    return Status::NeedData;
+}
+
+IProcessor::Status LimitTransform::prepareNonNegative(
+    const PortNumbers & updated_input_ports,
+    const PortNumbers & updated_output_ports)
+{
     bool has_full_port = false;
 
     auto process_pair = [&](size_t pos)
     {
-        auto status = preparePair(ports_data[pos]);
+        auto status = preparePairNonNegative(ports_data[pos]);
 
         switch (status)
         {
@@ -100,8 +195,6 @@ IProcessor::Status LimitTransform::prepare(
     if (num_finished_port_pairs == ports_data.size())
         return Status::Finished;
 
-    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
-
     /// If we reached limit for some port, then close others. Otherwise some sources may infinitely read data.
     /// Example: SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
     if ((!limit_is_unreachable && rows_read >= offset + limit)
@@ -130,7 +223,231 @@ LimitTransform::Status LimitTransform::prepare()
     return prepare({0}, {0});
 }
 
-LimitTransform::Status LimitTransform::preparePair(PortsData & data)
+void LimitTransform::preparePairNegative(size_t pos)
+{
+    PortsData & data = ports_data[pos];
+    auto & output = *data.output_port;
+    auto & input = *data.input_port;
+
+    if (output.isFinished())
+    {
+        if (!data.is_output_port_finished)
+        {
+            num_finished_output_port++;
+            data.is_output_port_finished = true;
+        }
+
+        if (!always_read_till_end)
+        {
+            if (!data.is_input_port_finished)
+            {
+                num_finished_input_port++;
+                data.is_input_port_finished = true;
+                if (!input.isFinished())
+                    input.close();
+            }
+            return;
+        }
+    }
+
+    /// Check can input.
+    if (input.isFinished())
+    {
+        if (!data.is_input_port_finished)
+        {
+            num_finished_input_port++;
+            data.is_input_port_finished = true;
+        }
+        return;
+    }
+
+    /// Check input has data.
+    input.setNeeded();
+    if (!input.hasData())
+        return;
+
+    if (output.isFinished())
+    {
+        /// When always_read_till_end is true and the output port is finished.
+        /// There is no need to push this chunk into the queue.
+        data.current_chunk = input.pull(true);
+        data.current_chunk.clear();
+    }
+    else
+    {
+        /// Push chunk into queue.
+        QueueElement to_push;
+        to_push.chunk = input.pull(true);
+        to_push.port = pos;
+        queuePushBack(to_push);
+    }
+
+    /// Extract queue length. Discard chunks not needed.
+    /// We discard a chunk only if cut is not needed.
+    if (!limit_is_unreachable)
+    {
+        while (!queue.empty() && rows_to_keep <= rows_in_queue - queue.front().chunk.getNumRows())
+        {
+            rows_in_queue -= queue.front().chunk.getNumRows();
+            queue.pop_front();
+        }
+    }
+
+    if (input.isFinished())
+    {
+        if (!data.is_input_port_finished)
+        {
+            num_finished_input_port++;
+            data.is_input_port_finished = true;
+        }
+        return;
+    }
+
+    input.setNeeded();
+}
+
+/// Push a chunk to the queue.
+void LimitTransform::queuePushBack(QueueElement & element)
+{
+    rows_in_queue += element.chunk.getNumRows();
+    queue.emplace_back(std::move(element));
+}
+
+/// Pop a chunk from the queue
+LimitTransform::QueueElement LimitTransform::queuePopFront()
+{
+    QueueElement pop(std::move(queue.front()));
+    queue.pop_front();
+    rows_in_queue -= pop.chunk.getNumRows();
+    return pop;
+}
+
+/// When limit and offset are negative, pop chunks from the queue if all input ports are finished.
+/// Cut operation will not occur more than twice.
+LimitTransform::QueueElement LimitTransform::popAndCutIfNeeded()
+{
+    if (limit_is_unreachable && !queue.empty() && rows_to_keep <= rows_in_queue - queue.front().chunk.getNumRows())
+        return queuePopFront();
+
+    QueueElement pop = queuePopFront();
+
+    if (rows_in_queue >= offset)
+    {
+        if (rows_in_queue + pop.chunk.getNumRows() <= rows_to_keep)
+            ///              <--------> rows_in_queue
+            /// <---------------------> rows_to_keep
+            /// ^limit            ^offset
+            ///      <-------> pop
+            ///      <-------> to return
+            return pop;
+
+        /// Need to cut chunk
+        UInt64 num_columns = pop.chunk.getNumColumns();
+        UInt64 num_rows = pop.chunk.getNumRows();
+        Columns columns = pop.chunk.detachColumns();
+
+        ///                  <--------> rows_in_queue
+        ///            <--------------> rows_to_keep
+        ///            ^limit      ^offset
+        /// <----------------> pop
+        ///            <-----> to return
+        UInt64 diff = num_rows + rows_in_queue - rows_to_keep;
+        for (UInt64 i = 0; i < num_columns; ++i)
+            columns[i] = columns[i]->cut(diff, num_rows - diff);
+        pop.chunk.setColumns(std::move(columns), num_rows - diff);
+        return pop;
+    }
+
+    /// Need to cut chunk
+    UInt64 num_columns = pop.chunk.getNumColumns();
+    UInt64 num_rows = pop.chunk.getNumRows();
+    Columns columns = pop.chunk.detachColumns();
+    UInt64 start;
+    UInt64 length;
+
+    if (rows_in_queue + num_rows > rows_to_keep)
+    {
+        ///                   <------------------> rows_in_queue
+        /// <----------------> pop
+        ///    ^limit    ^offset
+        ///     <--------> to return (limit is reachable)
+        /// <------------> to return (limit is unreachable)
+        /// When limit is unreachable, need to return all rows before offset
+        if (limit_is_unreachable)
+            start = 0;
+        else
+            start = rows_in_queue + num_rows - rows_to_keep;
+    }
+    else
+    {
+        ///                      <------------------> rows_in_queue
+        ///     <----------------> pop
+        /// ^limit    ^offset
+        ///     <-----> to return
+        start = 0;
+    }
+
+    length = rows_in_queue + num_rows - offset - start;
+    for (UInt64 i = 0; i < num_columns; ++i)
+        columns[i] = columns[i]->cut(start, length);
+    pop.chunk.setColumns(std::move(columns), length);
+    return pop;
+}
+
+/// Discard closed output ports' chunks in the queue.
+void LimitTransform::skipChunksForFinishedOutputPorts()
+{
+    while (num_finished_output_port < ports_data.size() &&
+           rows_in_queue > offset &&
+           ports_data[queue.front().port].output_port->isFinished())
+    {
+        QueueElement & front = queue.front();
+
+        if (!ports_data[front.port].is_output_port_finished)
+        {
+            num_finished_output_port++;
+            ports_data[front.port].is_output_port_finished = true;
+        }
+
+        rows_in_queue -= front.chunk.getNumRows();
+        queue.pop_front();
+    }
+}
+
+/// Pop chunks from the queue as many as possible then push them to their ports.
+LimitTransform::Status LimitTransform::loopPop()
+{
+    while (true)
+    {
+        skipChunksForFinishedOutputPorts();
+
+        if (num_finished_output_port == ports_data.size())
+        {
+            queue.clear();
+            return Status::Finished;
+        }
+
+        if (rows_in_queue <= offset)
+        {
+            for (auto & data : ports_data)
+            {
+                if (!data.is_output_port_finished)
+                    data.output_port->finish();
+            }
+
+            queue.clear();
+            return Status::Finished;
+        }
+
+        if (!ports_data[queue.front().port].output_port->canPush())
+            return Status::PortFull;
+
+        QueueElement pop(popAndCutIfNeeded());
+        ports_data[pop.port].output_port->push(std::move(pop.chunk));
+    }
+}
+
+LimitTransform::Status LimitTransform::preparePairNonNegative(PortsData & data)
 {
     auto & output = *data.output_port;
     auto & input = *data.input_port;
@@ -152,8 +469,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         input.setNotNeeded();
         return Status::PortFull;
     }
-
-    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
 
     /// Check if we are done with pushing.
     bool is_limit_reached = !limit_is_unreachable && rows_read >= offset + limit && !previous_row_chunk;
@@ -249,8 +564,6 @@ void LimitTransform::splitChunk(PortsData & data)
     auto current_chunk_sort_columns = extractSortColumns(data.current_chunk.getColumns());
     UInt64 num_rows = data.current_chunk.getNumRows();
     UInt64 num_columns = data.current_chunk.getNumColumns();
-
-    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
 
     if (previous_row_chunk && !limit_is_unreachable && rows_read >= offset + limit)
     {
