@@ -4,6 +4,7 @@ import psycopg2
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from helpers.postgres_utility import get_postgres_conn
+import helpers.postgres_utility as util
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
@@ -289,6 +290,48 @@ def test_predefined_connection_configuration(started_cluster):
     assert result.strip().endswith(
         "ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"
     )
+    # issue-52343
+    node1.query("DROP TABLE postgres_database.test_table")
+    util.create_postgres_table(
+        cursor,
+        "test_table",
+        settings={
+            "connection_pool_size": 50,
+            "connection_pool_auto_close": True,
+        },
+    )
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+    # invalid pool size
+    node1.query("DROP TABLE postgres_database.test_table")
+    assert "connection_pool_size cannot be zero" in node1.query_and_get_error(
+        """CREATE TABLE IF NOT EXISTS postgres_database.test_table(
+          a Integer PRIMARY KEY, b Integer
+        )
+        ENGINE PostgreSQL = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
+        SETTINGS
+        connection_pool_size = 0
+        """
+    )
+    assert "test_table" not in node1.query("SHOW TABLES FROM postgres_database")
+    assert "connection_pool_size cannot be zero" in node1.query_and_get_error(
+        """CREATE TABLE IF NOT EXISTS postgres_database.test_table(
+          a Integer PRIMARY KEY, b Integer
+        )
+        ENGINE PostgreSQL = PostgreSQL(postgres1, connection_pool_size = 0)
+        """
+    )
+    assert "test_table" not in node1.query("SHOW TABLES FROM postgres_database")
+    # override connection pool size with valid value
+    node1.query(
+        """CREATE TABLE IF NOT EXISTS postgres_database.test_table(
+          a Integer PRIMARY KEY, b Integer
+        )
+        ENGINE PostgreSQL = PostgreSQL(postgres1, connection_pool_size = 0)
+        SETTINGS
+        connection_pool_size = 50
+        """
+    )
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     node1.query(
         "INSERT INTO postgres_database.test_table SELECT number, number from numbers(100)"

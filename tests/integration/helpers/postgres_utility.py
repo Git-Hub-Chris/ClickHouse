@@ -81,6 +81,7 @@ def create_postgres_table(
     database_name="",
     replica_identity_full=False,
     template=postgres_table_template,
+    settings=dict(),
 ):
     if database_name == "":
         name = table_name
@@ -88,6 +89,12 @@ def create_postgres_table(
         name = f"{database_name}.{table_name}"
     drop_postgres_table(cursor, name)
     query = template.format(name)
+    if len(settings) > 0:
+        query = (
+            query
+            + " SETTINGS "
+            + (",".join(k + "=" + repr(v) for k, v in settings.items()))
+        )
     cursor.execute(query)
     print(f"Query: {query}")
     if replica_identity_full:
