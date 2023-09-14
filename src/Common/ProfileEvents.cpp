@@ -43,6 +43,9 @@
     M(UncompressedCacheWeightLost, "Number of bytes evicted from the uncompressed cache.") \
     M(MMappedFileCacheHits, "Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.") \
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.") \
+    M(SecondaryIndexCacheHits, "Number of times an index granule has been found in the secondary index cache.") \
+    M(SecondaryIndexCacheMisses, "Number of times an index granule has not been found in the secondary index cache and had to be read from disk.") \
+    M(SecondaryIndexCacheBytesEvicted, "Approximate total size (memory usage) of index granules evicted from the secondary index cache.") \
     M(OpenedFileCacheHits, "Number of times a file has been found in the opened file cache, so we didn't have to open it again.") \
     M(OpenedFileCacheMisses, "Number of times a file has been found in the opened file cache, so we had to open it again.") \
     M(OpenedFileCacheMicroseconds, "Amount of time spent executing OpenedFileCache methods.") \
@@ -252,6 +255,13 @@ The server successfully detected this situation and will download merged part fr
     M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on another replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.") \
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.") \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.") \
+    \
+    M(USearchAddCount, "Number of vectors added to usearch indexes.") \
+    M(USearchAddVisitedMembers, "Number of nodes visited when adding vectors to usearch indexes.") \
+    M(USearchAddComputedDistances, "Number of times distance was computed when adding vectors to usearch indexes.") \
+    M(USearchSearchCount, "Number of search operations performed in usearch indexes.") \
+    M(USearchSearchVisitedMembers, "Number of nodes visited when searching in usearch indexes.") \
+    M(USearchSearchComputedDistances, "Number of times distance was computed when searching usearch indexes.") \
     \
     M(RWLockAcquiredReadLocks, "Number of times a read lock was acquired (in a heavy RWLock).") \
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).") \

@@ -12,16 +12,22 @@
 namespace DB
 {
 
+using USearchImplType = unum::usearch::index_dense_gt</* key_at */ uint32_t, /* compressed_slot_at */ uint32_t>;
+
 template <unum::usearch::metric_kind_t Metric>
-class USearchIndexWithSerialization : public unum::usearch::index_dense_t
+class USearchIndexWithSerialization : public USearchImplType
 {
-    using Base = unum::usearch::index_dense_t;
+    using Base = USearchImplType;
+
+    std::shared_ptr<MMappedFile> file;
 
 public:
-    explicit USearchIndexWithSerialization(size_t dimensions);
+    USearchIndexWithSerialization(size_t dimensions, unum::usearch::scalar_kind_t scalar_kind);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
+    void view(std::shared_ptr<MMappedFile> file_, size_t offset, size_t length);
     size_t getDimensions() const;
+    size_t memoryUsageBytes() const;
 };
 
 template <unum::usearch::metric_kind_t Metric>
@@ -31,18 +37,22 @@ using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSeriali
 template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, USearchIndexWithSerializationPtr<Metric> index_);
+    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr<Metric> index_);
 
     ~MergeTreeIndexGranuleUSearch() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void viewFromMMappedFile(std::shared_ptr<MMappedFile> file, size_t offset, size_t length, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !index.get(); }
 
+    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
+
     const String index_name;
     const Block index_sample_block;
+    const unum::usearch::scalar_kind_t scalar_kind;
     USearchIndexWithSerializationPtr<Metric> index;
 };
 
@@ -50,7 +60,7 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block);
+    MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block, unum::usearch::scalar_kind_t scalar_kind_);
     ~MergeTreeIndexAggregatorUSearch() override = default;
 
     bool empty() const override { return !index || index->size() == 0; }
@@ -59,6 +69,7 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 
     const String index_name;
     const Block index_sample_block;
+    const unum::usearch::scalar_kind_t scalar_kind;
     USearchIndexWithSerializationPtr<Metric> index;
 };
 
@@ -90,7 +101,7 @@ private:
 class MergeTreeIndexUSearch : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_);
+    MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_);
 
     ~MergeTreeIndexUSearch() override = default;
 
@@ -100,8 +111,22 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
 
+    MergeTreeIndexFormat getSerializedFormat() const override
+    {
+        return {.version = 1, .extension = ".uidx", .supports_view_from_mmapped_file = true};
+    }
+
+    MergeTreeIndexFormat getDeserializedFormat(
+        const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const override
+    {
+        if (data_part_storage.exists(relative_path_prefix + ".uidx"))
+            return getSerializedFormat();
+        return {0 /*unknown*/, ""};
+    }
+
 private:
     const String distance_function;
+    const unum::usearch::scalar_kind_t scalar_kind;
 };
 
 }
