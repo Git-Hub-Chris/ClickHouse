@@ -7,6 +7,7 @@
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
+#include <Poco/MongoDB/ObjectId.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -17,9 +18,19 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <unordered_set>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/FormatFactory.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeFactory.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -28,6 +39,79 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int MONGODB_ERROR;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int UNKNOWN_TYPE;
+    extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+}
+
+namespace
+{
+    using MongoArray = Poco::MongoDB::Array;
+    using MongoDocument = Poco::MongoDB::Document;
+    using ObjectId = Poco::MongoDB::ObjectId;
+
+    DataTypePtr getDataTypeMongoDB(const Poco::MongoDB::Element & value)
+    {
+        switch (value.type())
+        {
+            case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
+                return std::make_shared<DataTypeNothing>();
+            case Poco::MongoDB::ElementTraits<bool>::TypeId:
+                return DataTypeFactory::instance().get("Bool");
+            case Poco::MongoDB::ElementTraits<Int32>::TypeId:
+                return std::make_shared<DataTypeInt32>();
+            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
+                return std::make_shared<DataTypeInt64>();
+            case Poco::MongoDB::ElementTraits<Float64>::TypeId:
+                return std::make_shared<DataTypeFloat64>();
+            case Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId:
+                return std::make_shared<DataTypeDateTime>();
+            case Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId:
+            {
+                auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(value).value();
+
+                DataTypes types;
+                types.reserve(parent->size());
+
+                for (size_t idx = 0, size = parent->size(); idx < size; ++idx)
+                {
+                    Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(idx));
+                    types.push_back(getDataTypeMongoDB(*child));
+                }
+
+                DataTypePtr common_type = tryGetLeastSupertype(types);
+                if (common_type)
+                    return std::make_shared<DataTypeArray>(common_type);
+
+                return std::make_shared<DataTypeTuple>(types);
+            }
+            case Poco::MongoDB::ElementTraits<MongoDocument::Ptr>::TypeId:
+            {
+                auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoDocument::Ptr> &>(value).value();
+
+                DataTypes types;
+                Strings names;
+                types.reserve(parent->size());
+                names.reserve(parent->size());
+
+                parent->elementNames(names);
+
+                for (const auto & name : names)
+                {
+                    Poco::MongoDB::Element::Ptr child = parent->get(name);
+                    types.push_back(getDataTypeMongoDB(*child));
+                }
+                return std::make_shared<DataTypeTuple>(types, names);
+            }
+            case Poco::MongoDB::ElementTraits<String>::TypeId:
+            case Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId:
+                return std::make_shared<DataTypeString>();
+            default:
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type id = {}", toString(value.type()));
+        }
+    }
+
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -41,50 +125,163 @@ StorageMongoDB::StorageMongoDB(
     const std::string & options_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment)
+    const String & comment,
+    const FormatSettings & format_settings)
     : IStorage(table_id_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
+    , uri(getMongoURI(host_, port_, database_name_, options_))
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        connectIfNotConnected();
+        auto columns = StorageMongoDB::getTableStructureFromData(connection, database_name, collection_name, format_settings);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
+std::string StorageMongoDB::getMongoURI(
+    const std::string & host_,
+    uint16_t port_,
+    const std::string & database_name_,
+    const std::string & options_)
+{
+    return "mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_;
+}
 
 void StorageMongoDB::connectIfNotConnected()
 {
     std::lock_guard lock{connection_mutex};
+
     if (!connection)
+        connection = getConnection(uri, database_name, username, password);
+}
+
+std::shared_ptr<Poco::MongoDB::Connection> StorageMongoDB::getConnection(
+    const std::string & uri_,
+    const std::string & database_name_,
+    const std::string & username_,
+    const std::string & password_)
+{
+    StorageMongoDBSocketFactory factory;
+    auto connection_ = std::make_shared<Poco::MongoDB::Connection>(uri_, factory);
+
+    Poco::URI poco_uri(uri_);
+    auto query_params = poco_uri.getQueryParameters();
+    auto auth_source = std::find_if(query_params.begin(), query_params.end(),
+                                    [&](const std::pair<std::string, std::string> & param) { return param.first == "authSource"; });
+    auto auth_db = database_name_;
+    if (auth_source != query_params.end())
+        auth_db = auth_source->second;
+
+    if (!username_.empty() && !password_.empty())
     {
-        StorageMongoDBSocketFactory factory;
-        connection = std::make_shared<Poco::MongoDB::Connection>(uri, factory);
+        Poco::MongoDB::Database poco_db(auth_db);
+        if (!poco_db.authenticate(*connection_, username_, password_, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
+            throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
     }
 
-    if (!authenticated)
-    {
-        Poco::URI poco_uri(uri);
-        auto query_params = poco_uri.getQueryParameters();
-        auto auth_source = std::find_if(query_params.begin(), query_params.end(),
-                                        [&](const std::pair<std::string, std::string> & param) { return param.first == "authSource"; });
-        auto auth_db = database_name;
-        if (auth_source != query_params.end())
-            auth_db = auth_source->second;
+    return connection_;
+}
 
-        if (!username.empty() && !password.empty())
+ColumnsDescription StorageMongoDB::getTableStructureFromData(
+    std::shared_ptr<Poco::MongoDB::Connection> & connection_,
+    const std::string & database_name_,
+    const std::string & collection_name_,
+    const FormatSettings & format_settings)
+{
+    MongoDBCursor cursor(database_name_, collection_name_, {}, {}, *connection_);
+
+    std::unordered_map<std::string, DataTypePtr> types;
+    std::vector<std::string> current_keys;
+    std::vector<std::string> final_keys;
+
+    size_t num_rows = 0;
+    while (num_rows < format_settings.max_rows_to_read_for_schema_inference)
+    {
+        auto documents = cursor.nextDocuments(*connection_);
+
+        for (auto & document : documents)
         {
-            Poco::MongoDB::Database poco_db(auth_db);
-            if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
+            if (document->exists("ok") && document->exists("$err")
+                && document->exists("code") && document->getInteger("ok") == 0)
+            {
+                auto code = document->getInteger("code");
+                const Poco::MongoDB::Element::Ptr value = document->get("$err");
+                auto message = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(*value).value();
+                throw Exception(ErrorCodes::MONGODB_ERROR, "Got error from MongoDB: {}, code: {}", message, code);
+            }
+
+            ++num_rows;
+
+            document->elementNames(current_keys);
+
+            for (auto & key : current_keys)
+            {
+                try
+                {
+                    const Poco::MongoDB::Element::Ptr value = document->get(key);
+                    auto new_type = getDataTypeMongoDB(*value);
+
+                    if (!types.contains(key))
+                    {
+                        types[key] = std::move(new_type);
+                        final_keys.push_back(std::move(key));
+                        continue;
+                    }
+
+                    DataTypePtr common_type;
+
+                    common_type = getLeastSupertype(DataTypes{types[key], new_type});
+
+                    types[key] = common_type;
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from MongoDB table: {}",
+                        e.what());
+                }
+            }
+
+            current_keys.clear();
         }
 
-        authenticated = true;
+        if (cursor.cursorID() == 0)
+            break;
     }
+
+    if (num_rows == 0)
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from MongoDB table: provided collection is empty");
+
+    NamesAndTypesList result;
+    for (const auto & key : final_keys)
+    {
+        if (!checkIfTypeIsComplete(types[key]))
+            throw Exception(
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                "Cannot determine type for column '{}' by first {} rows "
+                "of data, most likely this column contains only Nulls or empty Arrays/Maps",
+                key,
+                num_rows);
+
+        result.push_back({key, types[key]});
+    }
+
+    return ColumnsDescription(result);
 }
 
 
@@ -181,6 +378,26 @@ private:
             }
 
             document.add(name, array);
+            return;
+        }
+
+        if (which.isTuple())
+        {
+            const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(column);
+
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(&data_type);
+            const Strings & names = tuple_type->getElementNames();
+            const DataTypes & nested_types = tuple_type->getElements();
+
+            Poco::MongoDB::Document::Ptr nested_document = new Poco::MongoDB::Document();
+
+            for (size_t col_num = 0; col_num < column_tuple.tupleSize(); ++col_num)
+            {
+                const IColumn & nested_column = column_tuple.getColumn(col_num);
+                insertValueIntoMongoDB(*nested_document, names[col_num], *nested_types[col_num], nested_column, idx);
+            }
+
+            document.add(name, nested_document);
             return;
         }
 
@@ -298,6 +515,32 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
+        // Use format settings from global server context + settings from
+        // the SETTINGS clause of the create query. Settings from current
+        // session and user are ignored.
+        std::optional<FormatSettings> format_settings;
+        if (args.storage_def->settings)
+        {
+            FormatFactorySettings user_format_settings;
+
+            // Apply changed settings from global context, but ignore the
+            // unknown ones, because we only have the format settings here.
+            const auto & changes = args.getContext()->getSettingsRef().changes();
+            for (const auto & change : changes)
+            {
+                if (user_format_settings.has(change.name))
+                    user_format_settings.set(change.name, change.value);
+            }
+
+            // Apply changes from SETTINGS clause, with validation.
+            user_format_settings.applyChanges(args.storage_def->settings->changes);
+            format_settings = getFormatSettings(args.getContext(), user_format_settings);
+        }
+        else
+        {
+            format_settings = getFormatSettings(args.getContext());
+        }
+
         return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
@@ -309,9 +552,11 @@ void registerStorageMongoDB(StorageFactory & factory)
             configuration.options,
             args.columns,
             args.constraints,
-            args.comment);
+            args.comment,
+            format_settings.value_or(FormatSettings()));
     },
     {
+        .supports_schema_inference = true,
         .source_access_type = AccessType::MONGO,
     });
 }

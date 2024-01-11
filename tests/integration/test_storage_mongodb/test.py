@@ -468,3 +468,98 @@ def test_simple_insert_select(started_cluster):
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_schema_inference(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    inference_mongo_table = db["inference_table"]
+    data = []
+    for i in range(0, 100):
+        data.append(
+            {
+                "key": i,
+                "int64": -(i + 4294967295),
+                "int32": -(i + 1),
+                "int16": -(i + 1),
+                "int8": -(i + 1),
+                "uint64": i + 4294967295,
+                "uint32": i + 1,
+                "uint16": i + 1,
+                "uint8": i + 1,
+                "float32": i + 3.750,
+                "float64": i + 3.750,
+                "date": datetime.datetime(2002, 10, 27),
+                "datetime": datetime.datetime(2023, 3, 31, 6, 3, 12),
+                "string": str(i + 1),
+                "uuid": "f0e77736-91d1-48ce-8f01-15123ca1c7ed",
+                "bool": True,
+                "arr_float64": [i + 1.125, i + 2.5, i + 3.750],
+                "arr_datetime": [
+                    datetime.datetime(2023, 3, 31, 6, 3, 12),
+                    datetime.datetime(1999, 2, 28, 12, 46, 34),
+                ],
+                "tuple": {
+                    "float": i + 3.750,
+                    "tuple": {
+                        "datetime": datetime.datetime(2023, 3, 31, 6, 3, 12),
+                        "string": str(i + 1),
+                    },
+                    "array": [True, False, True],
+                },
+                "arr_tuple_arr": [
+                    {
+                        "int": i,
+                        "array": [
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                        ],
+                    },
+                    {
+                        "int": i,
+                        "array": [
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                        ],
+                    },
+                ],
+                "nullable_int": i if i % 2 == 0 else None,
+            }
+        )
+
+    inference_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+
+    node.query(
+        "CREATE TABLE inference_mongo_table ENGINE = MongoDB('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+
+    expected = "CREATE TABLE default.inference_mongo_table (`_id` String, `key` Int32, `int64` Int64, `int32` Int32, `int16` Int32, `int8` Int32, `uint64` Int64, `uint32` Int32, `uint16` Int32, `uint8` Int32, `float32` Float64, `float64` Float64, `date` DateTime, `datetime` DateTime, `string` String, `uuid` String, `bool` Bool, `arr_float64` Array(Float64), `arr_datetime` Array(DateTime), `tuple` Tuple(float Float64, tuple Tuple(datetime DateTime, string String), array Array(Bool)), `arr_tuple_arr` Array(Tuple(int Int32, array Array(Tuple(float32 Float64, date DateTime)))), `nullable_int` Int32) ENGINE = MongoDB(\\'mongo1:27017\\', \\'test\\', \\'inference_table\\', \\'root\\', \\'[HIDDEN]\\')\n"
+
+    assert expected == node.query(
+        "select create_table_query from system.tables where name = 'inference_mongo_table'"
+    )
+
+    # Test INSERT SELECT
+    node.query("INSERT INTO inference_mongo_table SELECT * FROM inference_mongo_table")
+
+    assert node.query("SELECT COUNT() FROM inference_mongo_table") == "200\n"
+    assert node.query("SELECT COUNT(DISTINCT *) FROM inference_mongo_table") == "100\n"
+
+    node.query("DROP TABLE inference_mongo_table")
+    inference_mongo_table.drop()

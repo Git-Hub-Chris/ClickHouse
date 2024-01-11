@@ -25,7 +25,8 @@ public:
         const std::string & options_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment);
+        const String & comment,
+        const FormatSettings & format_settings);
 
     std::string getName() const override { return "MongoDB"; }
 
@@ -55,7 +56,25 @@ public:
         std::string options;
     };
 
+    static ColumnsDescription getTableStructureFromData(
+        std::shared_ptr<Poco::MongoDB::Connection> & connection_,
+        const std::string & database_name_,
+        const std::string & collection_name_,
+        const FormatSettings & format_settings);
+
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+
+    static std::string getMongoURI(
+        const std::string & host_,
+        uint16_t port_,
+        const std::string & database_name_,
+        const std::string & options_);
+
+    static std::shared_ptr<Poco::MongoDB::Connection> getConnection(
+        const std::string & uri_,
+        const std::string & database_name_,
+        const std::string & username_,
+        const std::string & password_);
 
 private:
     void connectIfNotConnected();
@@ -67,8 +86,7 @@ private:
     const std::string uri;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    bool authenticated = false;
-    std::mutex connection_mutex; /// Protects the variables `connection` and `authenticated`.
+    std::mutex connection_mutex; /// Protects the variable `connection`.
 };
 
 }

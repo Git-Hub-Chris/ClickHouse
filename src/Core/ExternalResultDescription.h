@@ -35,16 +35,20 @@ struct ExternalResultDescription
         vtDecimal128,
         vtDecimal256,
         vtArray,
-        vtFixedString
+        vtFixedString,
+        vtTuple,
     };
 
+    using TypeWithNullable = std::pair<ValueType, bool /* is_nullable */>;
+
     Block sample_block;
-    std::vector<std::pair<ValueType, bool /* is_nullable */>> types;
+    std::vector<TypeWithNullable> types;
 
     ExternalResultDescription() = default;
     explicit ExternalResultDescription(const Block & sample_block_);
 
     void init(const Block & sample_block_);
+    static TypeWithNullable getValueTypeWithNullable(const DataTypePtr & type);
 };
 
 }
