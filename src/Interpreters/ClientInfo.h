@@ -32,6 +32,7 @@ public:
         POSTGRESQL = 5,
         LOCAL = 6,
         TCP_INTERSERVER = 7,
+        MONGODB = 8
     };
 
     enum class HTTPMethod : uint8_t
@@ -94,7 +95,7 @@ public:
     String http_user_agent;
     String http_referer;
 
-    /// For mysql and postgresql
+    /// For mysql, postgresql, mongodb
     UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
