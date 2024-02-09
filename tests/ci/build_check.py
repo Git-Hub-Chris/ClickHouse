@@ -1,46 +1,43 @@
 #!/usr/bin/env python3
 
 import argparse
-from pathlib import Path
-from typing import Tuple
-import subprocess
 import logging
+import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import Tuple
 
-from ci_config import CI_CONFIG, BuildConfig
+import docker_images_helper
 from cache_utils import CargoCache
-
-from env_helper import (
-    REPO_COPY,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-)
+from ci_config import CI_CONFIG, BuildConfig
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
 from git_helper import Git
 from pr_info import PRInfo
-from report import FAILURE, JobReport, StatusType, SUCCESS
+from report import FAILURE, SUCCESS, JobReport, StatusType
 from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
-import docker_images_helper
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
     update_version_local,
 )
-from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
+    # Export release binaries of clickhouse, tests and utils from release build
+    # and sanitizer builds to run in unit tests
     if build_config.package_type != "deb":
         return False
     if build_config.sanitizer != "":
         return True
     if build_config.debug_build:
-        return True
-    return False
+        return False
+    return True
 
 
 def get_packager_cmd(
@@ -66,7 +63,6 @@ def get_packager_cmd(
         cmd += f" --sanitizer={build_config.sanitizer}"
     if build_config.tidy:
         cmd += " --clang-tidy"
-
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
@@ -80,7 +76,7 @@ def get_packager_cmd(
     cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
-        cmd += " --with-binaries=tests"
+        cmd += " --with-binaries"
 
     if official:
         cmd += " --official"

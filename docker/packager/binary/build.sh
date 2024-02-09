@@ -130,7 +130,18 @@ mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 [ -x ./programs/self-extracting/clickhouse-stripped ] && mv ./programs/self-extracting/clickhouse-stripped /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
-mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
+# Utils
+mv ./utils/check-marks/check-marks /output ||: # may not exist for some binary builds
+mv ./utils/check-mysql-binlog/check-mysql-binlog /output ||: # may not exist for some binary builds
+mv ./utils/checksum-for-compressed-block/checksum-for-compressed-block-find-bit-flips /output ||: # may not exist for some binary builds
+mv ./utils/keeper-bench/keeper-bench /output ||: # may not exist for some binary builds
+mv ./utils/keeper-data-dumper/keeper-data-dumper /output ||: # may not exist for some binary builds
+mv ./utils/memcpy-bench/memcpy-bench /output ||: # may not exist for some binary builds
+mv ./utils/memcpy-bench/memcpy-bench /output ||: # may not exist for some binary builds
+mv ./utils/wikistat-loader/wikistat-loader /output ||: # may not exist for some binary builds
+mv ./utils/zookeeper-cli/clickhouse-zookeeper-cli /output ||: # may not exist for some binary builds
+# libFuzzer oss-fuzz compatible infrastructure
+mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||:
 
 prepare_combined_output () {
     local OUTPUT

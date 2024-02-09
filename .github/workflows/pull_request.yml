@@ -155,13 +155,6 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
-  BuilderBinRelease:
-    needs: [RunConfig, FastTest]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_release
-      data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAsan:
     needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
@@ -303,7 +296,6 @@ jobs:
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderBinRelease
       - BuilderDebAarch64
       - BuilderDebAsan
       - BuilderDebDebug
@@ -814,7 +806,7 @@ jobs:
       runner_type: fuzzer-unit-tester
       data: ${{ needs.RunConfig.outputs.data }}
   UnitTestsRelease:
-    needs: [RunConfig, BuilderBinRelease]
+    needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -992,7 +984,7 @@ jobs:
     concurrency:
       group: jepsen
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, BuilderBinRelease]
+    needs: [RunConfig, BuilderDebRelease]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse Keeper Jepsen

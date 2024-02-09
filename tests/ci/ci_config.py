@@ -33,7 +33,6 @@ class Build(metaclass=WithIter):
     PACKAGE_TSAN = "package_tsan"
     PACKAGE_MSAN = "package_msan"
     PACKAGE_DEBUG = "package_debug"
-    BINARY_RELEASE = "binary_release"
     BINARY_TIDY = "binary_tidy"
     BINARY_DARWIN = "binary_darwin"
     BINARY_AARCH64 = "binary_aarch64"
@@ -713,11 +712,6 @@ CI_CONFIG = CiConfig(
             package_type="deb",
             sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
-        Build.BINARY_RELEASE: BuildConfig(
-            name=Build.BINARY_RELEASE,
-            compiler="clang-17",
-            package_type="binary",
-        ),
         Build.BINARY_TIDY: BuildConfig(
             name=Build.BINARY_TIDY,
             compiler="clang-17",
@@ -807,7 +801,6 @@ CI_CONFIG = CiConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
-                Build.BINARY_RELEASE,
                 Build.FUZZERS,
             ]
         ),
@@ -1046,7 +1039,7 @@ CI_CONFIG = CiConfig(
             ),
         ),
         JobNames.UNIT_TEST: TestConfig(
-            Build.BINARY_RELEASE, job_config=JobConfig(**unit_test_common_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=JobConfig(**unit_test_common_params)  # type: ignore
         ),
         JobNames.UNIT_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(**unit_test_common_params)  # type: ignore
@@ -1081,13 +1074,13 @@ CI_CONFIG = CiConfig(
             job_config=JobConfig(pr_only=True, **{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
         JobNames.JEPSEN_KEEPER: TestConfig(
-            Build.BINARY_RELEASE,
+            Build.PACKAGE_RELEASE,
             job_config=JobConfig(
                 run_by_label="jepsen-test", run_command="jepsen_check.py keeper"
             ),
         ),
         JobNames.JEPSEN_SERVER: TestConfig(
-            Build.BINARY_RELEASE,
+            Build.PACKAGE_RELEASE,
             job_config=JobConfig(
                 run_by_label="jepsen-test", run_command="jepsen_check.py server"
             ),

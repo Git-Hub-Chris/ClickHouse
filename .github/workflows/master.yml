@@ -105,14 +105,6 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
-  BuilderBinRelease:
-    needs: [RunConfig, BuildDockers]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_release
-      checkout_depth: 0 # otherwise we will have no info about contributors
-      data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -271,7 +263,6 @@ jobs:
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderBinRelease
       - BuilderDebAarch64
       - BuilderDebAsan
       - BuilderDebDebug
@@ -714,7 +705,7 @@ jobs:
       runner_type: fuzzer-unit-tester
       data: ${{ needs.RunConfig.outputs.data }}
   UnitTestsReleaseClang:
-    needs: [RunConfig, BuilderBinRelease]
+    needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:

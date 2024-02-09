@@ -80,6 +80,7 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
+option (ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process
@@ -88,17 +89,17 @@ if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
+    set (ENABLE_BENCHMARKS OFF)
+    set (ENABLE_CHECK_HEAVY_BUILDS ON)
     set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
-    set (ENABLE_LIBRARIES 0)
-    set (ENABLE_SSL 1)
-    set (ENABLE_EXAMPLES 0)
-    set (ENABLE_UTILS 0)
-    set (ENABLE_THINLTO 0)
-    set (ENABLE_TCMALLOC 0)
-    set (ENABLE_JEMALLOC 0)
-    set (ENABLE_CHECK_HEAVY_BUILDS 1)
+    set (ENABLE_EXAMPLES OFF)
+    set (ENABLE_JEMALLOC OFF)
+    set (ENABLE_LIBRARIES OFF)
+    set (ENABLE_SSL ON)
+    set (ENABLE_THINLTO OFF)
+    set (ENABLE_UTILS OFF)
     set (GLIBC_COMPATIBILITY OFF)
-    set (ENABLE_BENCHMARKS 0)
+    set (USE_UNWIND ON)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
@@ -151,6 +152,7 @@ if (COMPILER_CLANG)
 endif ()
 
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
+option(ENABLE_UTILS "Build all utility programs in 'utils' subdirectories" OFF)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
@@ -348,19 +350,15 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    if (NOT ENABLE_TESTS AND NOT SANITIZE AND OS_LINUX)
-        # https://clang.llvm.org/docs/ThinLTO.html
-        # Applies to clang and linux only.
-        # Disabled when building with tests or sanitizers.
-        option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
-    endif()
-
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
-    if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
+    # https://clang.llvm.org/docs/ThinLTO.html
+    # Applies to clang only.
+    # Disabled when building with tests or sanitizers.
+    if (ENABLE_THINLTO AND NOT SANITIZE AND OS_LINUX)
         # Link time optimization
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
