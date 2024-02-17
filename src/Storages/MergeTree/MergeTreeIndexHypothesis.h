@@ -73,7 +73,7 @@ public:
         const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
 
     MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
-        const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
+        const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };
