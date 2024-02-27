@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int CANNOT_PARSE_BOOL;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Type conversion functions.
@@ -4336,19 +4337,50 @@ arguments, result_type, input_rows_count); \
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNativeNumber(from_type) || isEnum(from_type))
+
+        bool input_format_numbers_enum_on_conversion_error_value = context && context->getSettingsRef().input_format_numbers_enum_on_conversion_error;
+
+        if (isNativeNumber(from_type))
+        {
+            if (!input_format_numbers_enum_on_conversion_error_value)
+            {
+                auto function = Function::create();
+                return createFunctionAdaptor(function, from_type);
+            }
+
+            if (checkAndGetDataType<DataTypeInt8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt16>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt16, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt32, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt64, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt8, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt16>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt16, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt32, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt64, EnumType>();
+            else if (checkAndGetDataType<DataTypeFloat32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
+            else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+        }
+
+        if (isEnum(from_type))
         {
             auto function = Function::create();
             return createFunctionAdaptor(function, from_type);
         }
+
+        if (cast_type == CastType::accurateOrNull)
+            return createToNullableColumnWrapper();
         else
-        {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type->getName(), to_type->getName());
-        }
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                from_type->getName(), to_type->getName());
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -4415,6 +4447,86 @@ arguments, result_type, input_rows_count); \
                 {
                     for (size_t i = 0; i < size; ++i)
                         out_data[i] = result_type.getValue(col->getDataAt(i));
+                }
+
+                return res;
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+        };
+    }
+
+    template <typename ColumnNumberType, typename EnumType>
+    WrapperType createNumberToEnumWrapper() const
+    {
+        using FieldType = EnumType::FieldType;
+
+        const char * function_name = cast_name;
+        return [function_name] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        {
+            const auto & first_col = arguments.front().column.get();
+            const auto & result_type = typeid_cast<const EnumType &>(*res_type);
+
+            const ColumnNumberType * col = typeid_cast<const ColumnNumberType *>(first_col);
+
+            if (col && nullable_col && nullable_col->size() != col->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
+
+            if (col)
+            {
+                const auto size = col->size();
+                const auto & in_data = col->getData();
+
+                auto res = result_type.createColumn();
+                auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
+                out_data.resize(size);
+
+                auto default_enum_value = result_type.getValues().front().second;
+
+                constexpr auto min_value = std::numeric_limits<FieldType>::min();
+                constexpr auto max_value = std::numeric_limits<FieldType>::max();
+                constexpr auto is_signed = is_signed_v<typename ColumnNumberType::ValueType>;
+
+                if (nullable_col)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!nullable_col->isNullAt(i))
+                        {
+                            if constexpr (is_signed)
+                            {
+                                if (in_data[i] < min_value)
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+                            }
+
+                            if (in_data[i] > max_value)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+
+                            result_type.findByValue(static_cast<FieldType>(in_data[i]));
+                            out_data[i] = static_cast<FieldType>(in_data[i]);
+                        }
+                        else
+                            out_data[i] = default_enum_value;
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if constexpr (is_signed)
+                        {
+                            if (in_data[i] < min_value)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+                        }
+
+                        if (in_data[i] > max_value)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+
+                        result_type.findByValue(static_cast<FieldType>(in_data[i]));
+                        out_data[i] = static_cast<FieldType>(in_data[i]);
+                    }
                 }
 
                 return res;
