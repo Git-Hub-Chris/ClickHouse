@@ -84,6 +84,9 @@ namespace DB
     M(Bool, page_cache_use_madv_free, DBMS_DEFAULT_PAGE_CACHE_USE_MADV_FREE, "If true, the userspace page cache will allow the OS to automatically reclaim memory from the cache on memory pressure (using MADV_FREE).", 0) \
     M(Bool, page_cache_use_transparent_huge_pages, true, "Userspace will attempt to use transparent huge pages on Linux. This is best-effort.", 0) \
     M(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, "A cache for mmapped files.", 0) \
+    M(UInt64, inverted_index_metadata_cache_memory_limit, 8_GiB, "Limit of memory allocated for inverted index metadata cache. Zero disables the cache. Note that this setting is meant to be a protective limitation against Out-Of-Memory problem in low resource setups.", 0) \
+    M(UInt64, inverted_index_metadata_cache_max_cells, 0, "Max number of entries in metadata cache of inverted index. Zero means unlimited.", 0) \
+    M(UInt64, inverted_index_metadata_cache_ttl, 1*60*60, "TTL for cache entries of metadata of inverted index. Zero means unlimited.", 0) \
     \
     M(Bool,   disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
     M(UInt64, dns_cache_max_entries, 10000, "Internal DNS cache max entries.", 0) \
