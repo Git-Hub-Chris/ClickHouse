@@ -27,6 +27,7 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
+#include <Common/HeapProfiler.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -59,6 +60,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -628,6 +630,9 @@ try
 
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
+    const size_t physical_server_memory = getMemoryAmount();
+    HeapProfiler::instance().initialize(server_settings.heap_profiler_log_sample_rate, server_settings.heap_profiler_max_samples, physical_server_memory);
+
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.
     /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
@@ -708,8 +713,6 @@ try
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
     global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
 #endif
-
-    const size_t physical_server_memory = getMemoryAmount();
 
     LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
@@ -1539,6 +1542,9 @@ try
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
 
+            if (TraceCollector * t = global_context->getTraceCollector())
+                t->setHeapProfilerDumpPeriod(new_server_settings.heap_profiler_dump_period_seconds);
+
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
@@ -1860,6 +1866,8 @@ try
     if (hasPHDRCache())
     {
         global_context->initializeTraceCollector();
+        if (auto * trace_collector = global_context->getTraceCollector())
+            trace_collector->setHeapProfilerDumpPeriod(server_settings.heap_profiler_dump_period_seconds);
 
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings.total_memory_profiler_step)
