@@ -52,6 +52,8 @@ contents:
   dst: /lib/systemd/system/clickhouse-server.service
 - src: root/usr/bin/clickhouse-server
   dst: /usr/bin/clickhouse-server
+- src: root/usr/bin/clickhouse-su
+  dst: /usr/bin/clickhouse-su
 # clickhouse-keeper part
 - src: root/etc/clickhouse-keeper/keeper_config.xml
   dst: /etc/clickhouse-keeper/keeper_config.xml
