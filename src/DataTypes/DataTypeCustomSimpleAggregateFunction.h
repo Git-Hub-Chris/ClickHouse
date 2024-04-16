@@ -35,6 +35,9 @@ private:
     const DataTypes argument_types;
     const Array parameters;
 
+    /// TODO Make it sane.
+    const static std::vector<String> supported_functions;
+
 public:
     DataTypeCustomSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
@@ -42,6 +45,7 @@ public:
     AggregateFunctionPtr getFunction() const { return function; }
     String getName() const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
+    static bool isSimpleAggregateFunctionName(const String & function_name);
 };
 
 }
