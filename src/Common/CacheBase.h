@@ -4,6 +4,7 @@
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
+#include <Common/SIEVECachePolicy.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -69,6 +70,11 @@ public:
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_count, size_ratio, on_weight_loss_function);
+        }
+        else if (cache_policy_name == "SIEVE")
+        {
+            using SIEVEPolicy = SIEVECachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+            cache_policy = std::make_unique<SIEVEPolicy>(max_size_in_bytes, max_count, on_weight_loss_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
