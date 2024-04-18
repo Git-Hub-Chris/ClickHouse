@@ -88,7 +88,7 @@ public:
             return {};
 
         Cell & cell = it->second;
-        cell.visted = cell.visted >= up ? cell.visted : cell.visted + 1;
+        cell.visited = cell.visited >= up ? cell.visited : cell.visited + 1;
         /// Move the key to the end of the queue. The iterator remains valid.
         // queue.splice(queue.end(), queue, cell.queue_iterator);
 
@@ -102,7 +102,7 @@ public:
             return std::nullopt;
 
         Cell & cell = it->second;
-        cell.visted = cell.visted >= up ? cell.visted : cell.visted + 1;
+        cell.visited = cell.visited >= up ? cell.visited : cell.visited + 1;
         /// Move the key to the end of the queue. The iterator remains valid.
         // queue.splice(queue.end(), queue, cell.queue_iterator);
 
@@ -122,7 +122,7 @@ public:
             try
             {
                 cell.queue_iterator = queue.insert(queue.end(), key);
-                cell.visted = 0;
+                cell.visited = 0;
             }
             catch (...)
             {
@@ -133,7 +133,7 @@ public:
         else
         {
             current_size_in_bytes -= cell.size;
-            cell.visted = cell.visted >= up ? cell.visted : cell.visted + 1;
+            cell.visited = cell.visited >= up ? cell.visited : cell.visited + 1;
             // queue.splice(queue.end(), queue, cell.queue_iterator);
         }
 
@@ -163,7 +163,7 @@ private:
     {
         MappedPtr value;
         size_t size;
-        size_t visted;
+        size_t visited;
         SIEVEQueueIterator queue_iterator;
     };
 
