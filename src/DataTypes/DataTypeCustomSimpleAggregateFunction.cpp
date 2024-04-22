@@ -15,27 +15,6 @@
 
 #include <boost/algorithm/string/join.hpp>
 
-/// TODO Make it sane.
-const std::vector<String> DB::DataTypeCustomSimpleAggregateFunction::supported_functions = {
-    "any",
-    "anyLast",
-    "min",
-    "max",
-    "sum",
-    "sumWithOverflow",
-    "groupBitAnd",
-    "groupBitOr",
-    "groupBitXor",
-    "sumMap",
-    "minMap",
-    "maxMap",
-    "groupArrayArray",
-    "groupArrayLastArray",
-    "groupUniqArrayArray",
-    "sumMappedArrays",
-    "minMappedArrays",
-    "maxMappedArrays",
-};
 
 namespace DB
 {
@@ -49,19 +28,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+bool DataTypeCustomSimpleAggregateFunction::isSupportedFunction(const String & function_name, bool throw_unsupported)
 {
-    // check function
-    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
+    /// TODO Make it sane.
+    static const std::vector<String> supported_functions{
+        "any",
+        "anyLast",
+        "min",
+        "max",
+        "sum",
+        "sumWithOverflow",
+        "groupBitAnd",
+        "groupBitOr",
+        "groupBitXor",
+        "sumMap",
+        "minMap",
+        "maxMap",
+        "groupArrayArray",
+        "groupArrayLastArray",
+        "groupUniqArrayArray",
+        "sumMappedArrays",
+        "minMappedArrays",
+        "maxMappedArrays",
+    };
+    if (std::find(std::begin(supported_functions), std::end(supported_functions), function_name) == std::end(supported_functions))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported aggregate function {}, supported functions are {}",
-                function->getName(), boost::algorithm::join(supported_functions, ","));
+        if (throw_unsupported)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported aggregate function {}, supported functions are {}",
+                            function_name, boost::algorithm::join(supported_functions, ","));
+        return false;
     }
+    return true;
 }
 
-bool DataTypeCustomSimpleAggregateFunction::isSimpleAggregateFunctionName(const String & function_name)
+void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
 {
-    return !(std::find(std::begin(supported_functions), std::end(supported_functions), function_name) == std::end(supported_functions));
+    isSupportedFunction(function->getName(), true);
 }
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
