@@ -7,6 +7,12 @@
 #include <Common/VersionNumber.h>
 #include <boost/algorithm/string/trim.hpp>
 
+
+namespace Poco::Net
+{
+    class HTTPRequest;
+}
+
 namespace DB
 {
 
@@ -94,6 +100,7 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
+    std::unordered_map<String, String> http_headers;
 
     /// For mysql, postgresql, mongodb
     UInt64 connection_id = 0;
@@ -135,6 +142,9 @@ public:
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
+
+    /// Initialize parameters related to HTTP request.
+    void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
 
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
