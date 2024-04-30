@@ -759,8 +759,10 @@ constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
 Counter global_counters_array[END] {};
+/// Global variable, initialized by zeros.
+Counter global_counters_last_values_array[END] {};
 /// Initialize global counters statically
-Counters global_counters(global_counters_array);
+Counters global_counters(global_counters_array, global_counters_last_values_array);
 
 const Event Counters::num_counters = END;
 

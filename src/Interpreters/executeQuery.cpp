@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Core/ServerSettings.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -89,6 +90,8 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
 }
 
 namespace DB
@@ -107,6 +110,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int SERVER_OVERLOADED;
 }
 
 namespace FailPoints
@@ -287,6 +291,31 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
+}
+
+static void checkCPULoad(const ContextPtr context)
+{
+    /// We need to get last_value first to avoid the effect of a possible data race, when current loaded value will be less than the previous one
+    /// It's also possible that we'll have inconsistent values between wait_time and busy_time. But since we get the wait_time first, 
+    /// in the worst case it will lead to the underestimated CPU load, which is acceptable.
+    auto last_wait_time = ProfileEvents::global_counters.getLastValue(ProfileEvents::OSCPUWaitMicroseconds);
+    auto wait_time = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds].load(std::memory_order_relaxed) - last_wait_time;
+    auto last_busy_time = ProfileEvents::global_counters.getLastValue(ProfileEvents::OSCPUVirtualTimeMicroseconds);
+    auto busy_time = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds].load(std::memory_order_relaxed) - last_busy_time;
+    double min_ratio = context->getServerSettings().min_os_cpu_wait_time_ratio_to_throw;
+    double max_ratio = context->getServerSettings().max_os_cpu_wait_time_ratio_to_throw;
+    double current_ratio = (wait_time != 0 && busy_time == 0)
+        ? max_ratio
+        : std::min(std::max(min_ratio, static_cast<double>(wait_time) / static_cast<double>(busy_time)), max_ratio);
+    double probability_to_throw = (max_ratio == min_ratio) ? 0.0 : (current_ratio - min_ratio) / (max_ratio - min_ratio);
+
+    if (std::bernoulli_distribution server_overloaded(probability_to_throw); server_overloaded(thread_local_rng))
+        throw Exception(ErrorCodes::SERVER_OVERLOADED,
+            "CPU is overloaded, CPU is waiting for execution way more than executing, "
+            "latest wait time (OSCPUWaitMicroseconds metric) {}, latest busy time (OSCPUVirtualTimeMicroseconds metric) {}. "
+            "Consider reducing the number of queries or increase backoff between retries.",
+            wait_time,
+            busy_time);
 }
 
 
@@ -1390,6 +1419,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
+    checkCPULoad(context);
+
     std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
@@ -1422,6 +1453,8 @@ void executeQuery(
     istr.nextIfAtEnd();
 
     size_t max_query_size = context->getSettingsRef().max_query_size;
+
+    checkCPULoad(context);
 
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {

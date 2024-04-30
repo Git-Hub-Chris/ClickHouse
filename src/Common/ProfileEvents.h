@@ -58,6 +58,7 @@ namespace ProfileEvents
         /// Used to propagate increments
         Counters * parent = nullptr;
         bool trace_profile_events = false;
+        Counter * last_values = nullptr;
 
     public:
 
@@ -67,8 +68,8 @@ namespace ProfileEvents
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
         /// Global level static initializer
-        explicit Counters(Counter * allocated_counters) noexcept
-            : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
+        explicit Counters(Counter * allocated_counters, Counter * allocated_last_values) noexcept
+            : counters(allocated_counters), parent(nullptr), last_values(allocated_last_values), level(VariableContext::Global) {}
 
         Counter & operator[] (Event event)
         {
@@ -78,6 +79,16 @@ namespace ProfileEvents
         const Counter & operator[] (Event event) const
         {
             return counters[event];
+        }
+
+        Count getAndUpdateLastValue(Event event, Count last_value) const
+        {
+            return last_values[event].exchange(last_value, std::memory_order_relaxed);
+        }
+
+        Count getLastValue(Event event) const
+        {
+            return last_values[event].load(std::memory_order_relaxed);
         }
 
         void increment(Event event, Count amount = 1);
