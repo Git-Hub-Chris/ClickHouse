@@ -208,6 +208,12 @@ Unlike other secondary indices, inverted indexes (for now) map to row numbers (r
 is performance. In practice, users often search for multiple terms at once. For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE
 '%big%'` can be evaluated directly using an inverted index by forming the union of the row id lists for terms "little" and "big". This also
 means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
+
+For those care about storage and I/O resources, `inverted_index_row_id_divisor` can be set to a value suggested between [2, index_granularity/2].
+In this case, each single row id is assigned to a batch of rows, instead of unique row id for each row, which reduces size of posting list files,
+at the cost of precision loss for queries with multiple terms. For example, when `inverted_index_row_id_divisor` is set to 2, we may ideally expect
+a halved size of posting lists, wherein while querying like 'hello%clickhouse', the two rows sharing the same id containing 'hello' and
+'clickhouse' respectively will match, and thus the whole granule is picked up for later scanning.
 :::
 
 ## Related Content

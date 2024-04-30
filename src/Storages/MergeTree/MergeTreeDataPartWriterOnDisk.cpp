@@ -285,7 +285,12 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
+            store = std::make_shared<GinIndexStore>(
+                stream_name,
+                data_part->getDataPartStoragePtr(),
+                data_part->getDataPartStoragePtr(),
+                storage.getSettings()->max_digestion_size_per_segment,
+                storage.getSettings()->inverted_index_row_id_divisor);
             gin_index_stores[stream_name] = store;
         }
         skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));

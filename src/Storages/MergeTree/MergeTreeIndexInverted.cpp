@@ -126,9 +126,18 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
-    size_t rows_read = std::min(limit, block.rows() - *pos);
-    auto row_id = store->getNextRowIDRange(rows_read);
-    auto start_row_id = row_id;
+    if (store->row_id_divisor > 1)
+        updateImpl<true>(block, pos, limit, store->row_id_divisor);
+    else
+        updateImpl<false>(block, pos, limit, 1);
+}
+
+template <bool shared_row_id>
+void MergeTreeIndexAggregatorInverted::updateImpl(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] UInt32 row_id_divisor)
+{
+    const size_t rows_read = std::min(limit, block.rows() - *pos);
+    auto start_row_id = store->getNextRowIDRange(rows_read);
+    auto row_id = start_row_id;
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
@@ -151,7 +160,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                    addToGinFilter(shared_row_id ? row_id / row_id_divisor : row_id, ref.data, ref.size, granule->gin_filters[col]);
                     store->incrementCurrentSizeBy(ref.size);
                 }
                 current_position += 1;
@@ -166,18 +175,21 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                addToGinFilter(shared_row_id ? row_id / row_id_divisor : row_id, ref.data, ref.size, granule->gin_filters[col]);
                 store->incrementCurrentSizeBy(ref.size);
                 row_id++;
                 if (store->needToWrite())
                     need_to_write = true;
             }
         }
-        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
+        auto end_row_id = static_cast<UInt32>(start_row_id + rows_read - 1);
+        granule->gin_filters[col].addRowRangeToGinFilter(
+            store->getCurrentSegmentID(),
+            start_row_id / (shared_row_id ? row_id_divisor : 1),
+            end_row_id / (shared_row_id ? row_id_divisor : 1));
+
         if (need_to_write)
-        {
             store->writeSegment();
-        }
     }
 
     granule->has_elems = true;
