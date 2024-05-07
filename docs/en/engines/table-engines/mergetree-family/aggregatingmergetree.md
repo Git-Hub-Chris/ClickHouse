@@ -42,7 +42,7 @@ For a description of request parameters, see [request description](../../../sql-
 `default_aggregate_function` - a name of a [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) to be applied to all columns whose type is different from [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) or [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md). Optional parameter.
 The function is not applied to columns that are in primary key.
 
-If `default_aggregate_function` is not specified, no aggregate function is applied by default.
+If `default_aggregate_function` is not specified for a column and the column's type is not SimpleAggregateFunction or AggregateFunction, then any of values in the column within the same primary key is taken. This value can be NULL.
 
 
 **Query clauses**
