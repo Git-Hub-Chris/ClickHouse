@@ -39,7 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Функция по умолчанию не применяется к столбцам, входящим в первичный ключ.
 Необязательный параметр.
 
-Если `default_aggregate_function` не указан явно, то никакая функция по умолчанию не применяется.
+Если `default_aggregate_function` не указан для колонки и тип колонки не AggregateFunction и не SimpleAggregateFunction, то в качестве значения будет взято любое (включая NULL) из значений в столбце в рамках того же первичного ключа.
 
 **Секции запроса**
 
