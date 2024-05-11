@@ -46,9 +46,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_group_by(Keyword::GROUP_BY);
     ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_recursive(Keyword::RECURSIVE);
     ParserKeyword s_totals(Keyword::TOTALS);
     ParserKeyword s_having(Keyword::HAVING);
     ParserKeyword s_window(Keyword::WINDOW);
+    ParserKeyword s_qualify(Keyword::QUALIFY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserKeyword s_inrange(Keyword::INRANGE); // maybe IN_RANGE/IN RANGE/RANGE or even without this keyword?
@@ -88,6 +90,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_expression_list;
     ASTPtr having_expression;
     ASTPtr window_list;
+    ASTPtr qualify_expression;
     ASTPtr order_expression_list;
     ASTPtr interpolate_expression_list;
     ASTPtr limit_by_length;
@@ -105,6 +108,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_with.ignore(pos, expected))
         {
+            select_query->recursive_with = s_recursive.ignore(pos, expected);
+
             if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
                      .parse(pos, with_expression_list, expected))
                 return false;
@@ -268,6 +273,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             return false;
         }
+    }
+
+    /// QUALIFY expr
+    if (s_qualify.ignore(pos, expected))
+    {
+        if (!exp_elem.parse(pos, qualify_expression, expected))
+            return false;
     }
 
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
@@ -520,6 +532,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::HAVING, std::move(having_expression));
     select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
+    select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, std::move(qualify_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_FROM, std::move(limit_inrange_from_expression));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_TO, std::move(limit_inrange_to_expression));

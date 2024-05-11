@@ -25,6 +25,7 @@ public:
         GROUP_BY,
         HAVING,
         WINDOW,
+        QUALIFY,
         ORDER_BY,
         LIMIT_BY_OFFSET,
         LIMIT_BY_LENGTH,
@@ -57,6 +58,8 @@ public:
                 return "HAVING";
             case Expression::WINDOW:
                 return "WINDOW";
+            case Expression::QUALIFY:
+                return "QUALIFY";
             case Expression::ORDER_BY:
                 return "ORDER BY";
             case Expression::LIMIT_BY_OFFSET:
@@ -86,6 +89,7 @@ public:
 
     ASTPtr clone() const override;
 
+    bool recursive_with = false;
     bool distinct = false;
     bool group_by_all = false;
     bool group_by_with_totals = false;
@@ -101,6 +105,7 @@ public:
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }
     ASTPtr & refWhere()     { return getExpression(Expression::WHERE); }
     ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
+    ASTPtr & refQualify()    { return getExpression(Expression::QUALIFY); }
 
     ASTPtr with()           const { return getExpression(Expression::WITH); }
     ASTPtr select()         const { return getExpression(Expression::SELECT); }
@@ -110,6 +115,7 @@ public:
     ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
     ASTPtr having()         const { return getExpression(Expression::HAVING); }
     ASTPtr window()         const { return getExpression(Expression::WINDOW); }
+    ASTPtr qualify()         const { return getExpression(Expression::QUALIFY); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
@@ -121,7 +127,7 @@ public:
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 
-    bool hasFiltration() const { return where() || prewhere() || having(); }
+    bool hasFiltration() const { return where() || prewhere() || having() || qualify(); }
 
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
