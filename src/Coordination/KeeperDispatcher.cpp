@@ -305,7 +305,7 @@ void KeeperDispatcher::responseThread()
 
             try
             {
-                 setResponse(response_for_session.session_id, response_for_session.response);
+                setResponse(response_for_session.session_id, response_for_session.response);
             }
             catch (...)
             {
