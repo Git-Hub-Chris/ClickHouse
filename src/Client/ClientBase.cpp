@@ -332,6 +332,7 @@ void ClientBase::setupSignalHandler()
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error)
 {
     std::unique_ptr<IParserBase> parser;
+    std::unique_ptr<IKQLParserBase> kql_parser;
     ASTPtr res;
 
     size_t max_length = 0;
@@ -342,7 +343,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     const Dialect & dialect = settings.dialect;
 
     if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
+        kql_parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
@@ -352,7 +353,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         String message;
         if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
+            res = tryParseKQLQuery(*kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
         else
             res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
@@ -365,7 +366,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else
     {
         if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
+            res = parseKQLQueryAndMovePosition(*kql_parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
         else
             res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     }
