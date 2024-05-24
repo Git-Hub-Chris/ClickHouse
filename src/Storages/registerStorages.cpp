@@ -25,6 +25,7 @@ void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
+void registerStorageMeiliSearch(StorageFactory& factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -96,6 +97,7 @@ void registerStorageSQLite(StorageFactory & factory);
 #endif
 
 void registerStorageKeeperMap(StorageFactory & factory);
+void registerStorageFilesystem(StorageFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzureBlob(StorageFactory & factory);
@@ -124,6 +126,8 @@ void registerStorages()
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
+    registerStorageMeiliSearch(factory);
+
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif
@@ -200,6 +204,8 @@ void registerStorages()
     #if USE_AZURE_BLOB_STORAGE
     registerStorageAzureBlob(factory);
     #endif
+
+    registerStorageFilesystem(factory);
 }
 
 }
