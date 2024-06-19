@@ -49,7 +49,7 @@ struct IMergeTreeIndexGranule
     /// - 1 -- everything else.
     ///
     /// Implementation is responsible for version check,
-    /// and throw LOGICAL_ERROR in case of unsupported version.
+    /// and throws LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
     /// - IMergeTreeIndex::getSerializedFileExtension()
@@ -63,6 +63,16 @@ struct IMergeTreeIndexGranule
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
+
+
+/// Stores many granules at once in a more optimal form, allowing bulk filtering.
+struct IMergeTreeIndexBulkGranules
+{
+    virtual ~IMergeTreeIndexBulkGranules() = default;
+    virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+};
+
+using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;
 
 
 /// Aggregates info about a single block of data.
@@ -92,10 +102,15 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
+
+    using FilteredGranules = std::vector<size_t>;
+    virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
+    }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
-using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
@@ -120,7 +135,6 @@ protected:
 };
 
 using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedCondition>;
 
 
 struct IMergeTreeIndex
@@ -158,6 +172,17 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+
+    /// A more optimal filtering method
+    virtual bool supportsBulkFiltering() const
+    {
+        return false;
+    }
+
+    virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
+    }
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
 

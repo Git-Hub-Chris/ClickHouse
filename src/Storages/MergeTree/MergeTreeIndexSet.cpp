@@ -38,6 +38,10 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneEmpty())
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
 }
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
@@ -49,6 +53,10 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
 }
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
@@ -56,34 +64,32 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty set index {}.", backQuote(index_name));
 
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    auto size_serialization = size_type->getDefaultSerialization();
-
     if (max_rows != 0 && size() > max_rows)
     {
-        size_serialization->serializeBinary(0, ostr, {});
+        UInt64 rows = 0;
+        writeBinary(rows, ostr);
         return;
     }
 
-    size_serialization->serializeBinary(size(), ostr, {});
+    UInt64 rows = size();
+    writeBinary(rows, ostr);
     size_t num_columns = block.columns();
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & type = block.getByPosition(i).type;
+        auto & elem = block.getByPosition(i);
 
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
         settings.low_cardinality_max_dictionary_size = 0;
 
-        auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
 
-        const auto & column = *block.getByPosition(i).column;
-        serialization->serializeBinaryBulkStatePrefix(column, settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(column, 0, size(), settings, state);
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
+        const auto & column = *elem.column;
+        serializations[i]->serializeBinaryBulkStatePrefix(column, settings, state);
+        serializations[i]->serializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state);
+        serializations[i]->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -92,31 +98,85 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
-    Field field_rows;
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
-    size_t rows_to_read = field_rows.get<size_t>();
-
+    UInt64 rows_to_read;
+    readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
         return;
-
-    size_t num_columns = block.columns();
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
+    size_t num_columns = block.columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
         elem.column = elem.column->cloneEmpty();
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        auto serialization = elem.type->getDefaultSerialization();
 
-        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
     }
+}
+
+
+MergeTreeIndexBulkGranulesSet::MergeTreeIndexBulkGranulesSet(
+    const String & index_name_,
+    const Block & index_sample_block_,
+    size_t max_rows_)
+    : index_name(index_name_)
+    , max_rows(max_rows_)
+    , block(index_sample_block_.cloneEmpty())
+{
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
+
+    block.insert(ColumnWithTypeAndName
+    {
+        ColumnUInt64::create(),
+        std::make_shared<DataTypeUInt64>(),
+        "_granule_num"
+    });
+}
+
+
+void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version)
+{
+    if (version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+
+    UInt64 rows_to_read;
+    readBinary(rows_to_read, istr);
+    if (rows_to_read == 0)
+        return;
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.position_independent_encoding = false;
+
+    /// Appending to columns
+    size_t num_columns = block.columns() - 1;
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        auto & elem = block.getByPosition(i);
+
+        ISerialization::DeserializeBinaryBulkStatePtr state;
+
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+    }
+
+    /// The last column is designating the granule
+
+    auto & elem = block.getByPosition(num_columns);
+    MutableColumnPtr granule_num_column = elem.column->assumeMutable();
+
+    auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
+    for (size_t i = 0; i < rows_to_read; ++i)
+        data.push_back(granule_num);
 }
 
 
@@ -303,6 +363,60 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             return true;
 
     return false;
+}
+
+MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const
+{
+    FilteredGranules res;
+
+    if (isUseless())
+        return res;
+
+    const MergeTreeIndexBulkGranulesSet & granules = assert_cast<const MergeTreeIndexBulkGranulesSet &>(*idx_granules);
+
+    Block block = granules.block;
+    size_t size = block.rows();
+    if (size == 0)
+        return res;
+
+    actions->execute(block);
+
+    const auto & column = block.getByName(actions_output_column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    if (column->onlyNull())
+        return res;
+
+    const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+    const NullMap * null_map = nullptr;
+
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
+    {
+        col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
+        null_map = &col_nullable->getNullMapData();
+    }
+
+    if (!col_uint8)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ColumnUInt8 is expected as a Set index condition result");
+
+    const auto & condition = col_uint8->getData();
+
+    const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
+
+    UInt64 current_granule_num = 0;
+    bool current_granule_pass = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (current_granule_pass && granule_nums[i] == current_granule_num)
+            continue;
+
+        current_granule_num = granule_nums[i];
+        current_granule_pass = (!null_map || !(*null_map)[i]) && (condition[i] & 1);
+
+        if (current_granule_pass)
+            res.push_back(current_granule_num);
+    }
+
+    return res;
 }
 
 
@@ -536,6 +650,11 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
 MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
 {
     return std::make_shared<MergeTreeIndexGranuleSet>(index.name, index.sample_block, max_rows);
+}
+
+MergeTreeIndexBulkGranulesPtr MergeTreeIndexSet::createIndexBulkGranules() const
+{
+    return std::make_shared<MergeTreeIndexBulkGranulesSet>(index.name, index.sample_block, max_rows);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const

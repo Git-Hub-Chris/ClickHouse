@@ -30,12 +30,28 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
 
-    ~MergeTreeIndexGranuleSet() override = default;
+    const String index_name;
+    const size_t max_rows;
+
+    Block block;
+    Serializations serializations;
+};
+
+
+struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
+{
+    explicit MergeTreeIndexBulkGranulesSet(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        size_t max_rows_);
+
+    void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     const String index_name;
     const size_t max_rows;
 
     Block block;
+    Serializations serializations;
 };
 
 
@@ -90,7 +106,10 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
+    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
+
     ~MergeTreeIndexConditionSet() override = default;
+
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
         ActionsDAGPtr & result_dag,
@@ -134,7 +153,13 @@ public:
 
     ~MergeTreeIndexSet() override = default;
 
+    bool supportsBulkFiltering() const override
+    {
+        return true;
+    }
+
     MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
