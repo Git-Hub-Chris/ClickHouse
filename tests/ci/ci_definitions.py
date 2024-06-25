@@ -61,6 +61,14 @@ class Tags(metaclass=WithIter):
     libFuzzer = "libFuzzer"
 
 
+class GhLabels:
+    """
+    Labels for GH PRs
+    """
+
+    PR_PUSHED_TO_CLOUD = "pr-pushed-to-cloud"
+
+
 class BuildNames(metaclass=WithIter):
     """
     Build' job names
@@ -214,8 +222,12 @@ class StatusNames(metaclass=WithIter):
 
 
 class SyncState(metaclass=WithIter):
-    PENDING = "awaiting merge"
-    MERGE_FAILED = "merge failed"
+    PENDING = "awaiting sync"
+    # temporary state if GH does not know mergeable state
+    MERGE_UNKNOWN = "unknown state (might be auto recoverable)"
+    # changes cannot be pushed/merged to a sync branch
+    PUSH_FAILED = "push failed"
+    MERGE_CONFLICTS = "merge conflicts"
     TESTING = "awaiting test results"
     TESTS_FAILED = "tests failed"
     COMPLETED = "completed"

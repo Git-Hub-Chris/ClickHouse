@@ -32,6 +32,7 @@ from commit_status_helper import (
     post_commit_status,
     set_status_comment,
     get_commit_filtered_statuses,
+    remove_labels,
 )
 from digest_helper import DockerDigester
 from env_helper import (
@@ -910,27 +911,46 @@ def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> No
 
 
 def _set_pending_statuses(pr_info: PRInfo) -> None:
-    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
-    try:
-        found = False
-        statuses = get_commit_filtered_statuses(commit)
-        for commit_status in statuses:
-            if commit_status.context == CI.StatusNames.SYNC:
-                print(
-                    f"Sync status found [{commit_status.state}], [{commit_status.description}] - won't be overwritten"
-                )
-                found = True
-                break
-        if not found:
-            print("Set Sync status to pending")
-            commit.create_status(
-                state=PENDING,
-                target_url="",
-                description=CI.SyncState.PENDING,
-                context=CI.StatusNames.SYNC,
+    gh = GitHub(get_best_robot_token(), per_page=100)
+    if pr_info.repo_full_name == "ClickHouse/ClickHouse":
+        if CI.GhLabels.PR_PUSHED_TO_CLOUD in pr_info.labels:
+            print(
+                f"Clearing [{CI.GhLabels.PR_PUSHED_TO_CLOUD}] label - update is to be pushed to cloud"
             )
-    except Exception as ex:
-        print(f"ERROR: failed to set GH commit status, ex: {ex}")
+            remove_labels(gh, pr_info, [CI.GhLabels.PR_PUSHED_TO_CLOUD])
+        try:
+            commit = get_commit(gh, pr_info.sha)
+            found = False
+            statuses = get_commit_filtered_statuses(commit)
+            for commit_status in statuses:
+                if commit_status.context == CI.StatusNames.SYNC:
+                    print(
+                        f"Sync status found [{commit_status.state}], [{commit_status.description}] - won't be overwritten"
+                    )
+                    found = True
+                    break
+            if not found:
+                print("Set Sync status to pending")
+                commit.create_status(
+                    state=PENDING,
+                    target_url="",
+                    description=CI.SyncState.PENDING,
+                    context=CI.StatusNames.SYNC,
+                )
+        except Exception as ex:
+            print(f"ERROR: failed to set GH commit status, ex: {ex}")
+    else:
+        last_synced_upstream_commit = pr_info.get_latest_sync_commit()
+        print(
+            f"Set Pending status for [{CI.StatusNames.SYNC}] in upstream PR commit [{last_synced_upstream_commit.sha}]"
+        )
+        post_commit_status(
+            last_synced_upstream_commit,
+            PENDING,
+            "",
+            CI.SyncState.TESTING,
+            CI.StatusNames.SYNC,
+        )
 
 
 def main() -> int:
