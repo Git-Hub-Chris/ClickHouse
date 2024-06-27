@@ -144,6 +144,7 @@ private:
     const UInt64 cross_join_min_rows_to_compress = 1000;
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
+    const size_t max_merged_block_bytes_in_join = 0;
     std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
@@ -280,6 +281,13 @@ public:
 
     bool allowParallelHashJoin() const;
 
+    bool preferMergeRightTable() const
+    {
+        return isInner(table_join.kind)
+            && !isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH)
+            && !isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    }
+
     bool joinUseNulls() const { return join_use_nulls; }
 
     UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
@@ -298,6 +306,7 @@ public:
 
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
+    size_t maxMergedBlockSize() const { return max_merged_block_bytes_in_join; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }

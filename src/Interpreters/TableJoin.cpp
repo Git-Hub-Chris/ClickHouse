@@ -110,6 +110,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , max_merged_block_bytes_in_join(settings.max_merged_block_bytes_in_join)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
