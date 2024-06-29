@@ -12,6 +12,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/DataTypeMap.h>
 #include <IO/IReadableWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -257,9 +258,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
+    auto storage_settings = global_ctx->data->getSettings();
     SerializationInfo::Settings info_settings =
     {
-        .ratio_of_defaults_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
+        .type_map_num_shards = storage_settings->type_map_num_shards_on_merge,
         .choose_kind = true,
     };
 
@@ -874,7 +877,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns);
     else
         global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
 

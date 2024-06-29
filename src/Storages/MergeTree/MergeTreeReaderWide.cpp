@@ -106,6 +106,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         {
             auto & cache = caches[columns_to_read[pos].getNameInStorage()];
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+
             prefetchForColumn(
                 priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
                 current_task_last_mark, cache, deserialize_states_cache);
@@ -400,6 +401,15 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
+}
+
+ISerialization::SubstreamsCache * MergeTreeReaderWide::getSubstreamsCache(size_t column_idx)
+{
+    /// Use substream cache only if column uses shared streams because
+    /// sometimes additional computations are required to put subcolumn to cache.
+    if (has_shared_streams[column_idx])
+        return &caches[columns_to_read[column_idx].getNameInStorage()];
+    return nullptr;
 }
 
 }

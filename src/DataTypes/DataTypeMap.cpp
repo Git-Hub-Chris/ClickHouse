@@ -8,9 +8,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationInfoMap.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -20,10 +24,10 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
-DataTypeMap::DataTypeMap(const DataTypePtr & nested_)
-    : nested(nested_)
+DataTypeMap::DataTypeMap(const DataTypePtr & nested_) : nested(nested_)
 {
     const auto * type_array = typeid_cast<const DataTypeArray *>(nested.get());
     if (!type_array)
@@ -57,7 +61,8 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
 }
 
 DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_)
-    : key_type(key_type_), value_type(value_type_)
+    : key_type(key_type_)
+    , value_type(value_type_)
     , nested(std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(DataTypes{key_type_, value_type_}, Names{"keys", "values"})))
 {
@@ -70,12 +75,10 @@ void DataTypeMap::assertKeyType() const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Map cannot have a key of type {}", key_type->getName());
 }
 
-
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
     s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
-
     return s.str();
 }
 
@@ -91,17 +94,46 @@ MutableColumnPtr DataTypeMap::createColumn() const
     return ColumnMap::create(nested->createColumn());
 }
 
+MutableColumnPtr DataTypeMap::createColumn(const ISerialization & serialization) const
+{
+    const auto * nested_serialization = removeWrapper<SerializationNamed>(serialization);
+    size_t num_shards = assert_cast<const SerializationMap &>(*nested_serialization).getNumShards();
+
+    MutableColumns shards(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        shards[i] = nested->createColumn();
+
+    return ColumnMap::create(std::move(shards));
+}
+
 Field DataTypeMap::getDefault() const
 {
     return Map();
 }
 
+SerializationPtr DataTypeMap::getSerializationWithShards(size_t num_shards) const
+{
+    return std::make_shared<SerializationMap>(key_type->getDefaultSerialization(), value_type->getDefaultSerialization(), nested->getDefaultSerialization(), num_shards);
+}
+
 SerializationPtr DataTypeMap::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationMap>(
-        key_type->getDefaultSerialization(),
-        value_type->getDefaultSerialization(),
-        nested->getDefaultSerialization());
+    return getSerializationWithShards(1);
+}
+
+MutableSerializationInfoPtr DataTypeMap::createSerializationInfo(const SerializationInfoSettings & settings) const
+{
+    return std::make_shared<SerializationInfoMap>(settings.type_map_num_shards, ISerialization::Kind::DEFAULT, settings);
+}
+
+SerializationInfoPtr DataTypeMap::getSerializationInfo(const IColumn &) const
+{
+    return std::make_shared<SerializationInfoMap>(/*num_shards=*/ 1, ISerialization::Kind::DEFAULT, SerializationInfo::Settings{});
+}
+
+SerializationPtr DataTypeMap::getSerialization(const SerializationInfo & info) const
+{
+    return getSerializationWithShards(assert_cast<const SerializationInfoMap &>(info).getNumShards());
 }
 
 bool DataTypeMap::equals(const IDataType & rhs) const
@@ -133,16 +165,62 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
     value_type->forEachChild(callback);
 }
 
+std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(
+    std::string_view subcolumn_name,
+    const SubstreamData & data,
+    bool throw_if_null) const
+{
+    auto throw_or_return = [&]
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+        return nullptr;
+    };
+
+    static constexpr std::string_view shard_prefix = "shard_";
+
+    if (data.serialization && subcolumn_name.starts_with(shard_prefix))
+    {
+        size_t num_shards = assert_cast<const SerializationMap &>(*data.serialization).getNumShards();
+
+        std::string_view shard_str = subcolumn_name.substr(shard_prefix.size());
+        ReadBufferFromMemory buf(shard_str.data(), shard_str.size());
+
+        UInt32 shard_hash;
+        if (!tryReadIntText(shard_hash, buf) || !buf.eof())
+            return throw_or_return();
+
+        if (num_shards == 1)
+            return std::make_unique<SubstreamData>(data);
+
+        UInt32 shard = shard_hash % num_shards;
+        String shard_subcolumn = String(shard_prefix) + toString(shard);
+
+        SubstreamData shard_data = data;
+
+        shard_data.serialization = std::make_shared<SerializationNamed>(
+            getSerializationWithShards(1),
+            shard_subcolumn,
+            ISerialization::Substream::MapShard);
+
+        return std::make_unique<SubstreamData>(std::move(shard_data));
+    }
+
+    return throw_or_return();
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Map data type family must have two arguments: key and value types");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Map data type family must have 2 arguments: key and value types");
 
-    DataTypes nested_types;
-    nested_types.reserve(arguments->children.size());
-
-    for (const ASTPtr & child : arguments->children)
-        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+    const auto & children = arguments->children;
+    DataTypes nested_types
+    {
+        DataTypeFactory::instance().get(children[0]),
+        DataTypeFactory::instance().get(children[1]),
+    };
 
     return std::make_shared<DataTypeMap>(nested_types);
 }

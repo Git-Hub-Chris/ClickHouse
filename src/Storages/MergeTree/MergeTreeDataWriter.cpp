@@ -115,7 +115,7 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->getMapped();
+            selector[i] = static_cast<UInt32>(it->getMapped());
     }
     // Checking partitions per insert block again here outside the loop above
     // so we can log the total number of partitions that would have parts created
@@ -306,7 +306,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(static_cast<UInt32>(partitions_count), selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
@@ -547,8 +547,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->uuid = UUIDHelpers::generateV4();
 
     const auto & data_settings = data.getSettings();
+    SerializationInfo::Settings settings
+    {
+        .ratio_of_defaults_for_sparse = data_settings->ratio_of_defaults_for_sparse_serialization,
+        .type_map_num_shards = data_settings->type_map_num_shards_on_insert,
+        .choose_kind = true,
+    };
 
-    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 

@@ -127,7 +127,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
             /// create full subcolumn from variant according to discriminators.
             const auto & variant_column = assert_cast<const ColumnDynamic &>(*data.column).getVariantColumn();
             auto creator = SerializationVariantElement::VariantSubcolumnCreator(variant_column.getLocalDiscriminatorsPtr(), "", *discriminator, variant_column.localDiscriminatorByGlobal(*discriminator));
-            res->column = creator.create(res->column);
+            res->column = creator.createColumn(res->column);
         }
         else
         {

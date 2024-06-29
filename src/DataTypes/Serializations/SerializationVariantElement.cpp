@@ -222,17 +222,19 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
 {
 }
 
-DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::DataTypePtr & prev) const
+void SerializationVariantElement::VariantSubcolumnCreator::create(SubstreamData & data, std::string_view) const
 {
-    return makeNullableOrLowCardinalityNullableSafe(prev);
+    if (data.type)
+        data.type = makeNullableOrLowCardinalityNullableSafe(data.type);
+
+    if (data.column)
+        data.column = createColumn(data.column);
+
+    if (data.serialization)
+        data.serialization = std::make_shared<SerializationVariantElement>(data.serialization, variant_element_name, global_variant_discriminator);
 }
 
-SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::SerializationPtr & prev) const
-{
-    return std::make_shared<SerializationVariantElement>(prev, variant_element_name, global_variant_discriminator);
-}
-
-ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const
+ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::createColumn(const ColumnPtr & prev) const
 {
     /// Case when original Variant column contained only one non-empty variant and no NULLs.
     /// In this case just use this variant.

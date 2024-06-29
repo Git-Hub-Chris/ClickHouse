@@ -5,6 +5,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
+#include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

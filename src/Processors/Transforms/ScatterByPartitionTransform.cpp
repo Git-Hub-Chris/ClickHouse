@@ -120,7 +120,7 @@ void ScatterByPartitionTransform::generateOutputChunks()
     output_chunks.resize(output_size);
     for (const auto & column : columns)
     {
-        auto filtered_columns = column->scatter(output_size, selector);
+        auto filtered_columns = column->scatter(static_cast<UInt32>(output_size), selector);
         for (size_t i = 0; i < output_size; ++i)
             output_chunks[i].addColumn(std::move(filtered_columns[i]));
     }

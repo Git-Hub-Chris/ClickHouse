@@ -64,11 +64,10 @@ private:
         {
         }
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override
+        void create(SubstreamData & data, std::string_view) const override
         {
-            return std::make_shared<SerializationNamed>(prev, name, substream_type);
+            if (data.serialization)
+                data.serialization = std::make_shared<SerializationNamed>(data.serialization, name, substream_type);
         }
     };
 

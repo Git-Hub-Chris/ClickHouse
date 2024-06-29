@@ -215,6 +215,9 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 {
     std::unordered_map<String, ColumnPtr> offsets_columns;
 
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.type_map_enumerate_shards = false;
+
     auto available_column = available_columns.begin();
     for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
     {
@@ -222,7 +225,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             continue;
 
         auto serialization = IDataType::getSerialization(*available_column);
-        serialization->enumerateStreams([&](const auto & subpath)
+        serialization->enumerateStreams(settings, [&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
@@ -267,7 +270,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 #endif
                 }
             }
-        }, available_column->type, res_columns[i]);
+        }, ISerialization::SubstreamData(serialization).withType(available_column->type).withColumn(res_columns[i]));
     }
 
     return offsets_columns;

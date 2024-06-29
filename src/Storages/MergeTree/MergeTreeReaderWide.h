@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DataTypes/Serializations/ISerialization.h"
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 
@@ -89,6 +90,9 @@ private:
         ISerialization::SubstreamsCache & cache,
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
 
+    ISerialization::SubstreamsCache * getSubstreamsCache(size_t column_idx);
+
+    std::vector<bool> has_shared_streams;
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     std::unordered_set<std::string> prefetched_streams;

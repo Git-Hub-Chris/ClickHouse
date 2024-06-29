@@ -1,3 +1,4 @@
+#include "Storages/StorageSnapshot.h"
 #include <Core/Settings.h>
 
 #include <Interpreters/TreeOptimizer.h>

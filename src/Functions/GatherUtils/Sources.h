@@ -52,7 +52,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
 
-    MutableColumnPtr createValuesColumn()
+    MutableColumnPtr createValuesColumn() const override
     {
         return column.cloneEmpty();
     }
@@ -654,7 +654,7 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
 
-    MutableColumnPtr createValuesColumn()
+    MutableColumnPtr createValuesColumn() const override
     {
         return elements.cloneEmpty();
     }
@@ -757,9 +757,9 @@ struct NullableArraySource : public ArraySource
     {
     }
 
-    MutableColumnPtr createValuesColumn()
+    MutableColumnPtr createValuesColumn() const override
     {
-        return ColumnNullable::create(static_cast<ArraySource *>(this)->createValuesColumn(), ColumnUInt8::create());
+        return ColumnNullable::create(ArraySource::createValuesColumn(), ColumnUInt8::create());
     }
 
     void accept(ArraySourceVisitor & visitor) override { visitor.visit(*this); }

@@ -54,6 +54,7 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedOffsets,
     NamedNullMap,
     NamedVariantDiscriminators,
+    MapShard,
 };
 
 String ISerialization::Substream::toString() const
@@ -134,8 +135,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
 {
     settings.path.push_back(Substream::Regular);
 
-    auto cached_column = getFromSubstreamsCache(cache, settings.path);
-    if (cached_column)
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
     {
         column = cached_column;
     }
@@ -395,27 +395,22 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::MapShard
             || path[last_elem].type == Substream::VariantElement;
 }
 
-ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
+ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, std::string_view subcolumn_name, size_t prefix_len)
 {
-    assert(prefix_len <= path.size());
+    chassert(prefix_len <= path.size());
     if (prefix_len == 0)
         return {};
 
     ssize_t last_elem = prefix_len - 1;
     auto res = path[last_elem].data;
+
     for (ssize_t i = last_elem - 1; i >= 0; --i)
-    {
-        const auto & creator = path[i].creator;
-        if (creator)
-        {
-            res.type = res.type ? creator->create(res.type) : res.type;
-            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
-            res.column = res.column ? creator->create(res.column) : res.column;
-        }
-    }
+        if (path[i].creator)
+            path[i].creator->create(res, subcolumn_name);
 
     return res;
 }

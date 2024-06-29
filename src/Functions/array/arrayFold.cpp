@@ -168,7 +168,7 @@ public:
         size_t cur_element_in_cur_array = 0;
         for (ssize_t i = 0; i < num_elements_in_array_col; ++i)
         {
-            selector[i] = cur_element_in_cur_array;
+            selector[i] = static_cast<UInt32>(cur_element_in_cur_array);
             ++cur_element_in_cur_array;
             max_array_size = std::max(cur_element_in_cur_array, max_array_size);
             while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[first_row_with_non_empty_array - 1])
@@ -190,7 +190,7 @@ public:
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
             for (size_t i = 0; i < num_array_cols; ++i)
-                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatter(max_array_size, selector);
+                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatter(static_cast<UInt32>(max_array_size), selector);
 
         ColumnPtr accumulator_col = arguments.back().column->convertToFullColumnIfConst();
         MutableColumnPtr result_col = accumulator_col->cloneEmpty();

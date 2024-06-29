@@ -35,6 +35,7 @@ public:
     bool canBeInsideNullable() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
 
@@ -43,6 +44,7 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
+    bool hasDynamicSubcolumnsData() const override { return true; }
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
@@ -51,12 +53,16 @@ public:
     DataTypePtr getNestedTypeWithUnnamedTuple() const;
 
     SerializationPtr doGetDefaultSerialization() const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn &) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
 
     static bool isValidKeyType(DataTypePtr key_type);
-
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    SerializationPtr getSerializationWithShards(size_t num_shards) const;
     void assertKeyType() const;
 };
 

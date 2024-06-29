@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 
 #include <boost/noncopyable.hpp>
+#include <string_view>
 #include <unordered_map>
 #include <memory>
 #include <set>
@@ -89,16 +90,6 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
-    struct ISubcolumnCreator
-    {
-        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
-        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
-        virtual ~ISubcolumnCreator() = default;
-    };
-
-    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
-
     struct SerializeBinaryBulkState
     {
         virtual ~SerializeBinaryBulkState() = default;
@@ -156,6 +147,14 @@ public:
         DeserializeBinaryBulkStatePtr deserialize_state;
     };
 
+    struct ISubcolumnCreator
+    {
+        virtual void create(SubstreamData & data, std::string_view name) const = 0;
+        virtual ~ISubcolumnCreator() = default;
+    };
+
+    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
+
     struct Substream
     {
         enum Type
@@ -179,6 +178,8 @@ public:
             ObjectStructure,
             ObjectData,
 
+            MapShard,
+
             VariantDiscriminators,
             NamedVariantDiscriminators,
             VariantOffsets,
@@ -201,6 +202,8 @@ public:
 
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
+
+        UInt64 map_shard_num = 0;
 
         /// Data for current substream.
         SubstreamData data;
@@ -230,6 +233,7 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        bool type_map_enumerate_shards = true;
     };
 
     virtual void enumerateStreams(
@@ -428,7 +432,7 @@ public:
 
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
-    static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+    static SubstreamData createFromPath(const SubstreamPath & path, std::string_view subcolumn_name, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>
@@ -461,6 +465,15 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
     }
 
     return state_concrete;
+}
+
+template <typename Serialization>
+const ISerialization * removeWrapper(const ISerialization & serialization)
+{
+    const ISerialization * res = &serialization;
+    while (const auto * current = typeid_cast<const Serialization *>(res))
+        res = current->getNested().get();
+    return res;
 }
 
 }

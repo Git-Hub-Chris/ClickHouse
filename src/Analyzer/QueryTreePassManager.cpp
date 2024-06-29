@@ -21,6 +21,7 @@
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/MapElementConstKeyToShardPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
@@ -248,6 +249,7 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
+    manager.addPass(std::make_unique<MapElementConstKeyToShardPass>());
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
 

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -73,9 +74,8 @@ public:
             ColumnVariant::Discriminator global_variant_discriminator_,
             ColumnVariant::Discriminator local_variant_discriminator_);
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        void create(SubstreamData & data, std::string_view name) const override;
+        ColumnPtr createColumn(const ColumnPtr & prev) const;
     };
 private:
     friend SerializationVariant;
