@@ -895,6 +895,7 @@ class IColumn;
     /* ###################################### */ \
     /* ######## EXPERIMENTAL FEATURES ####### */ \
     /* ###################################### */ \
+    M(Bool, cluster_query_shards, true, "For ReplicatedMergeTree Cluster mode query all shards", 0) \
     M(Bool, allow_experimental_materialized_postgresql_table, false, "Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental", 0) \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \

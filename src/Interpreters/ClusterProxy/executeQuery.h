@@ -29,6 +29,8 @@ struct StorageID;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
+class ReplicatedMergeTreeCluster;
+
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
@@ -82,6 +84,17 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);
+
+/// TODO(cluster):
+/// -- sharding key and CLUSTER BY optimization
+void executeQueryForReplicatedMergeTreeCluster(
+    QueryPlan & query_plan,
+    SelectStreamFactory & stream_factory,
+    LoggerPtr log,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
+    const ReplicatedMergeTreeCluster & cluster);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
