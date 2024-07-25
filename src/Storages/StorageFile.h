@@ -99,6 +99,8 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    bool supportsPrewhere() const override { return true; }
+
     struct ArchiveInfo
     {
         std::vector<std::string> paths_to_archives;
