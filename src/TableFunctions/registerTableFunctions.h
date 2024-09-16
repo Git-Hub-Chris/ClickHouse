@@ -22,6 +22,7 @@ void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+void registerTableFunctionSFTP(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON

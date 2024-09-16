@@ -31,6 +31,8 @@ void registerTableFunctions()
     registerTableFunctionFuzzJSON(factory);
 #endif
 
+    registerTableFunctionLoop(factory);
+
 #if USE_HIVE
     registerTableFunctionHive(factory);
 #endif
