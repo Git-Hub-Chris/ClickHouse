@@ -1,0 +1,4 @@
+PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: merge_tree_min_rows_for_concurrent_read WAS CHANGED FROM 163840 TO 131072
+PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: merge_tree_min_bytes_for_concurrent_read WAS CHANGED FROM 251658240 TO 167772160
+PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: merge_tree_min_rows_for_concurrent_read_for_remote_filesystem WAS CHANGED FROM 163840 TO 131072
+PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem WAS CHANGED FROM 251658240 TO 167772160
