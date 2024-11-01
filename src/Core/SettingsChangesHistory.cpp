@@ -64,6 +64,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
+            {"strict_named_tuple_conversion", true, true, "New setting"},
         }
     },
     {"24.10",

@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    extern const SettingsBool strict_named_tuple_conversion;
 }
 
 namespace ErrorCodes
@@ -3721,9 +3722,13 @@ private:
         std::vector<WrapperType> element_wrappers;
         std::vector<std::optional<size_t>> to_reverse_index;
 
-        /// For named tuples allow conversions for tuples with
-        /// different sets of elements. If element exists in @to_type
-        /// and doesn't exist in @to_type it will be filled by default values.
+        /// When `strict_named_tuple_conversion` is enabled, named tuple
+        /// conversions will throw an exception if any fields are lost, helping
+        /// prevent silent data loss. Otherwise, named tuple conversions allow
+        /// different sets of elements, filling missing elements with default
+        /// values.
+        ///
+        /// NOTE: Background operations are not subject to this setting.
         if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
@@ -3736,6 +3741,7 @@ private:
             element_wrappers.reserve(to_names.size());
             to_reverse_index.reserve(from_names.size());
 
+            size_t num_from_fields = 0;
             for (size_t i = 0; i < to_names.size(); ++i)
             {
                 auto it = from_positions.find(to_names[i]);
@@ -3743,6 +3749,7 @@ private:
                 {
                     element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
                     to_reverse_index.emplace_back(it->second);
+                    ++num_from_fields;
                 }
                 else
                 {
@@ -3750,6 +3757,25 @@ private:
                     to_reverse_index.emplace_back();
                 }
             }
+
+            bool strict_named_tuple_conversion = false;
+
+            if (DB::CurrentThread::isInitialized())
+            {
+                const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                // Avoid strict checks for background operations like part
+                // merging to achieve better backward compatibility.
+                if (query_context && !query_context->isBackgroundOperationContext())
+                    strict_named_tuple_conversion = query_context->getSettingsRef()[Setting::strict_named_tuple_conversion];
+            }
+
+            if (strict_named_tuple_conversion && num_from_fields < from_names.size())
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE,
+                    "Some fields from source tuple are lost when casting {} to {} (strict_named_tuple_conversion is enabled)",
+                    from_type->getName(),
+                    to_type->getName());
         }
         else
         {
