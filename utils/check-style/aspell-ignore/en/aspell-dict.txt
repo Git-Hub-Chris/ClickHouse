@@ -49,6 +49,7 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
+BFloat
 BIGINT
 BIGSERIAL
 BORO
@@ -1674,6 +1675,7 @@ domainWithoutWWWRFC
 dont
 dotProduct
 dotall
+downsampled
 downsampling
 dplyr
 dragonbox
@@ -3164,4 +3166,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-BFloat

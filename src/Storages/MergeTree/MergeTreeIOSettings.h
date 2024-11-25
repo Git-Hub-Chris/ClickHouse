@@ -88,6 +88,9 @@ struct MergeTreeWriterSettings
     bool use_v1_object_and_dynamic_serialization;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t adaptive_write_buffer_initial_size;
+
+    Float64 scalar_quantization_quantile_for_vector_similarity_index;
+    UInt64 scalar_quantization_buffer_size_for_vector_similarity_index;
 };
 
 }
