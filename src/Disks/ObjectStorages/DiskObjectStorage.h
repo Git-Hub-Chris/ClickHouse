@@ -4,12 +4,12 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <IO/FileEncryptionCommon.h>
 #include <Common/re2.h>
 
 #include <base/scope_guard.h>
 
 #include "config.h"
-
 
 namespace CurrentMetrics
 {
@@ -181,6 +181,7 @@ public:
     DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;
+    bool supportsOverlays() const override;
 
     /// Is object storage read only?
     /// For example: WebObjectStorage is read only as it allows to read from a web server
@@ -207,8 +208,15 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
     void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
 
-    /// Get names of all cache layers. Name is how cache is defined in configuration file.
-    NameSet getCacheLayersNames() const override;
+    /// Add an encryption layer.
+#if USE_SSL
+    void wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name);
+#else
+    [[noreturn]] void wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name);
+#endif
+
+    /// Get names of all layers. Name is how the layer is defined in configuration file.
+    NameSet getOverlaysNames() const override;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
