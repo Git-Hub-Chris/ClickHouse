@@ -39,6 +39,7 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include "Storages/MergeTree/MergeTreePrimaryIndex.h"
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 
@@ -77,6 +78,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsFloat primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool primary_key_compress_in_memory;
+    extern const MergeTreeSettingsUInt64 primary_key_min_compressed_block_size_in_memory;
+    extern const MergeTreeSettingsFloat primary_key_max_ratio_to_compress_in_memory;
 }
 
 namespace ErrorCodes
@@ -363,6 +367,15 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     initializeIndexGranularityInfo();
     initializePartMetadataManager();
+
+    auto storage_settings = storage.getSettings();
+
+    primary_index_settings =
+    {
+        .compress = (*storage_settings)[MergeTreeSetting::primary_key_compress_in_memory],
+        .min_block_size = (*storage_settings)[MergeTreeSetting::primary_key_min_compressed_block_size_in_memory],
+        .max_ratio_to_compress = (*storage_settings)[MergeTreeSetting::primary_key_max_ratio_to_compress_in_memory],
+    };
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -421,8 +434,19 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     if (index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
 
-    optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
-    index = std::make_shared<Index>(std::move(index_columns));
+    std::vector<size_t> num_equal_ranges;
+    optimizeIndexColumns(index_granularity->getMarksCount(), index_columns, num_equal_ranges);
+
+    index = std::make_shared<PrimaryIndex>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
+}
+
+void IMergeTreeDataPart::setIndex(IndexPtr new_index)
+{
+    std::scoped_lock lock(index_mutex);
+    if (index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
+
+    index = std::move(new_index);
 }
 
 void IMergeTreeDataPart::unloadIndex()
@@ -450,8 +474,6 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
     {
         /// NOTE: getting min and max dates from the part name (instead of part data) because we want
         /// the merged part name be determined only by source part names.
-        /// It is simpler this way when the real min and max dates for the block range can change
-        /// (e.g. after an ALTER DELETE command).
         DayNum min_date;
         DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
@@ -677,25 +699,13 @@ void IMergeTreeDataPart::removeIfNeeded() noexcept
 UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
-    if (!index)
-        return 0;
-
-    UInt64 res = 0;
-    for (const auto & column : *index)
-        res += column->byteSize();
-    return res;
+    return index ? index->bytes() : 0;
 }
 
 UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
-    if (!index)
-        return 0;
-
-    UInt64 res = 0;
-    for (const auto & column : *index)
-        res += column->allocatedBytes();
-    return res;
+    return index ? index->allocatedBytes() : 0;
 }
 
 UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
@@ -998,8 +1008,8 @@ void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) co
 {
 }
 
-template <typename Columns>
-void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & index_columns) const
+template <typename ColumnsVector>
+void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, ColumnsVector & index_columns, std::vector<size_t> & num_equal_ranges) const
 {
     if (marks_count == 0)
     {
@@ -1008,24 +1018,28 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
     }
 
     size_t key_size = index_columns.size();
-    Float64 ratio_to_drop_suffix_columns = (*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns];
 
     /// Cut useless suffix columns, if necessary.
-    if (key_size > 1 && ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1)
+    Float64 ratio_to_drop_suffix_columns = (*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns];
+    bool drop_primary_key_suffix = ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1;
+
+    if (drop_primary_key_suffix || primary_index_settings.compress)
     {
-        for (size_t j = 0; j < key_size - 1; ++j)
+        num_equal_ranges.assign(key_size, 1);
+
+        for (size_t j = 0; j < key_size; ++j)
         {
-            size_t num_changes = 0;
             for (size_t i = 1; i < marks_count; ++i)
             {
-                if (0 != index_columns[j]->compareAt(i, i - 1, *index_columns[j], 0))
-                    ++num_changes;
+                if (index_columns[j]->compareAt(i, i - 1, *index_columns[j], 0) != 0)
+                    ++num_equal_ranges[j];
             }
 
-            if (static_cast<Float64>(num_changes) / marks_count >= ratio_to_drop_suffix_columns)
+            if (drop_primary_key_suffix && static_cast<Float64>(num_equal_ranges[j]) / marks_count >= ratio_to_drop_suffix_columns)
             {
                 key_size = j + 1;
                 index_columns.resize(key_size);
+                num_equal_ranges.resize(key_size);
                 break;
             }
         }
@@ -1073,8 +1087,9 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
             key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
     }
 
-    optimizeIndexColumns(marks_count, loaded_index);
     size_t total_bytes = 0;
+    std::vector<size_t> num_equal_ranges;
+    optimizeIndexColumns(marks_count, loaded_index, num_equal_ranges);
 
     for (const auto & column : loaded_index)
     {
@@ -1094,7 +1109,8 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexRows, marks_count);
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexBytes, total_bytes);
 
-    return std::make_shared<Index>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+    Columns index_columns(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+    return std::make_shared<Index>(std::move(index_columns), std::move(num_equal_ranges), primary_index_settings);
 }
 
 void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const

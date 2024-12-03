@@ -29,6 +29,26 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+static ColumnPtr convertIndexColumnToFull(const PrimaryIndex & index, const IDataType & type, size_t pos)
+{
+    const auto & index_column = index.getIndexColumn(pos);
+    if (!index_column.isCompressed())
+        return index_column.getRawColumn();
+
+    size_t num_rows = index.getNumRows();
+    auto column = type.createColumn();
+    column->reserve(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        Field field;
+        index_column.get(row, field);
+        column->insert(field);
+    }
+
+    return column;
+}
+
 class MergeTreeIndexSource : public ISource, WithContext
 {
 public:
@@ -85,9 +105,9 @@ protected:
 
                 /// Some of the columns from suffix of primary index may be not loaded
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index_ptr->size())
+                if (index_position < index_ptr->getNumColumns())
                 {
-                    result_columns[pos] = index_ptr->at(index_position);
+                    result_columns[pos] = convertIndexColumnToFull(*index_ptr, *column_type, index_position);
                 }
                 else
                 {

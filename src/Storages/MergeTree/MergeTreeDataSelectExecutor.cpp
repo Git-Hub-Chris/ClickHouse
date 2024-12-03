@@ -42,6 +42,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -1086,19 +1087,34 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     const auto & key_indices = key_condition.getKeyIndices();
+
     DataTypes key_types;
+    IMergeTreeDataPart::IndexPtr index;
+    std::shared_ptr<ColumnsWithTypeAndName> index_columns;
+    bool is_index_compressed = false;
+
     if (!key_indices.empty())
     {
-        const auto index = part->getIndex();
+        Columns raw_index_columns;
+        index = part->getIndex();
+        is_index_compressed = index->isCompressed();
+
+        if (!is_index_compressed)
+        {
+            index_columns = std::make_shared<ColumnsWithTypeAndName>();
+            raw_index_columns = index->getRawColumns();
+        }
 
         for (size_t i : key_indices)
         {
-            if (i < index->size())
-                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-            else
-                index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+            if (!is_index_compressed)
+            {
+                if (i < raw_index_columns.size())
+                    index_columns->emplace_back(raw_index_columns.at(i), primary_key.data_types[i], primary_key.column_names[i]);
+                else
+                    index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+            }
 
             key_types.emplace_back(primary_key.data_types[i]);
         }
@@ -1107,7 +1123,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// If there are no monotonic functions, there is no need to save block reference.
     /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
     std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
-    if (key_condition.hasMonotonicFunctionsChain())
+    if (!is_index_compressed && key_condition.hasMonotonicFunctionsChain())
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
@@ -1119,9 +1135,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
-        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
+        create_field_ref = [index](size_t row, size_t column, FieldRef & field)
         {
-            (*index_columns)[column].column->get(row, field);
+            index->get(column, row, field);
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
@@ -1130,12 +1146,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
     size_t used_key_size = key_indices.size();
+    size_t num_key_columns = index ? index->getNumColumns() : 0;
+
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
     /// For _part_offset and _part virtual columns
-    DataTypes part_offset_types
-        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
+    DataTypes part_offset_types{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
@@ -1147,7 +1164,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    if ((*index_columns)[i].column)
+                    if (i < num_key_columns)
                         create_field_ref(range.begin, i, index_left[i]);
                     else
                         index_left[i] = NEGATIVE_INFINITY;
@@ -1159,7 +1176,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    if ((*index_columns)[i].column)
+                    if (i < num_key_columns)
                     {
                         create_field_ref(range.begin, i, index_left[i]);
                         create_field_ref(range.end, i, index_right[i]);

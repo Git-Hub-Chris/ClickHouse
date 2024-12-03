@@ -251,7 +251,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
@@ -263,6 +262,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
        for (const auto & column : *additional_columns_samples)
             columns_sample.insert(column);
     }
+
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(columns_sample);
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])

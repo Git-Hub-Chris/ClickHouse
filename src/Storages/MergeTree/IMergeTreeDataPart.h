@@ -26,6 +26,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/MergeTreePrimaryIndex.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
@@ -79,8 +80,8 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = Columns;
-    using IndexPtr = std::shared_ptr<const Index>;
+    using Index = PrimaryIndex;
+    using IndexPtr = std::shared_ptr<const PrimaryIndex>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -389,6 +390,7 @@ public:
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
     void setIndex(Columns index_columns);
+    void setIndex(IndexPtr new_index);
     void unloadIndex();
     bool isIndexLoaded() const;
 
@@ -622,6 +624,9 @@ protected:
     mutable std::mutex index_mutex;
     mutable IndexPtr index;
 
+    /// Settings to create primary index.
+    PrimaryIndex::Settings primary_index_settings;
+
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
 
@@ -720,6 +725,9 @@ private:
     /// Optimize index. Drop useless columns from suffix of primary key.
     template <typename Columns>
     void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
+
+    template <typename ColumnsVector>
+    void optimizeIndexColumns(size_t marks_count, ColumnsVector & index_columns, std::vector<size_t> & num_equal_ranges) const;
 
     void appendFilesOfIndex(Strings & files) const;
 
