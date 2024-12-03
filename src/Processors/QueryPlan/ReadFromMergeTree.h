@@ -55,6 +55,13 @@ struct UsefulSkipIndexes
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
 };
 
+struct DynamiclyFilteredPartsRanges
+{
+    MergeTreeReadPartsRangesPtr parts_ranges_ptr;
+};
+
+using DynamiclyFilteredPartsRangesPtr = std::shared_ptr<DynamiclyFilteredPartsRanges>;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -212,6 +219,9 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    DynamiclyFilteredPartsRangesPtr useDynamiclyFilteredParts();
+    bool splitsRangesIntoIntersectionAndNonIntersecting() const { return read_split_ranges_into_intersecting_and_non_intersecting_injection; }
+
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -276,6 +286,8 @@ private:
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
+    DynamiclyFilteredPartsRangesPtr dynamically_filtered_parts;
+
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
@@ -285,6 +297,8 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+
+    bool read_split_ranges_into_intersecting_and_non_intersecting_injection = false;
 };
 
 }

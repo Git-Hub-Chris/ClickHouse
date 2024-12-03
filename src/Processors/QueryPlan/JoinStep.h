@@ -3,12 +3,38 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/Joins.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 namespace DB
 {
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+
+struct DynamiclyFilteredPartsRanges;
+using DynamiclyFilteredPartsRangesPtr = std::shared_ptr<DynamiclyFilteredPartsRanges>;
+
+class ColumnSet;
+
+/// This structure is used to filter left table by the right one after HashJoin is filled.
+struct DynamicJoinFilters
+{
+    struct Clause
+    {
+        ColumnSet * set;
+        Names keys;
+    };
+
+    std::vector<Clause> clauses;
+    DynamiclyFilteredPartsRangesPtr parts;
+    ActionsDAG actions;
+    ContextPtr context;
+    StorageMetadataPtr metadata;
+
+    void filterDynamicPartsByFilledJoin(const IJoin & join);
+};
+
+using DynamicJoinFiltersPtr = std::shared_ptr<DynamicJoinFilters>;
 
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
@@ -38,6 +64,8 @@ public:
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
+    void setDynamicFilter(DynamicJoinFiltersPtr dynamic_filter_);
+
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
 
@@ -57,6 +85,8 @@ private:
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
     bool swap_streams = false;
+
+    DynamicJoinFiltersPtr dynamic_filter;
 };
 
 /// Special step for the case when Join is already filled.

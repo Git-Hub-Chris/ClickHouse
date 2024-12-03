@@ -5,8 +5,14 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <IO/Operators.h>
+// #include "Common/FieldVisitorToString.h"
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnSet.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 
 namespace DB
@@ -69,7 +75,128 @@ std::vector<size_t> getPermutationForBlock(
     return permutation;
 }
 
+ColumnsWithTypeAndName squashBlocks(const Names & keys, const BlocksList & blocks)
+{
+    ColumnsWithTypeAndName squashed;
+    std::vector<size_t> positions;
+
+    auto log = getLogger("squashBlocks");
+
+    // std::cerr << "===== " << blocks.front().dumpStructure() << std::endl;
+    for (const auto & name : keys)
+    {
+        // std::cerr << ".... " << name << std::endl;
+        positions.push_back(blocks.front().getPositionByName(name));
+    }
+
+    bool first = true;
+    for (const auto & block : blocks)
+    {
+        // std::cerr << "===== " << block.dumpStructure() << std::endl;
+        // for (size_t row = 0; row < block.getByPosition(0).column->size(); ++row)
+        //     LOG_TRACE(log, "{} : {}", row, applyVisitor(FieldVisitorToString(), (*block.getByPosition(0).column)[row]));
+
+        if (first)
+        {
+            first = false;
+            for (size_t pos : positions)
+            {
+                squashed.push_back(blocks.front().getByPosition(pos));
+                squashed.back().column = recursiveRemoveSparse(squashed.back().column);
+            }
+            continue;
+        }
+
+        for (size_t i = 0; i < positions.size(); ++i)
+        {
+            auto & sq_col = squashed[i];
+            auto col_mutable = IColumn::mutate(std::move(sq_col.column));
+
+            auto rhs_col = recursiveRemoveSparse(block.getByPosition(positions[i]).column);
+            size_t rows = rhs_col->size();
+
+            col_mutable->insertRangeFrom(*rhs_col, 0, rows);
+            sq_col.column = std::move(col_mutable);
+        }
+    }
+
+    return squashed;
 }
+
+}
+
+void DynamicJoinFilters::filterDynamicPartsByFilledJoin(const IJoin & join)
+{
+    auto log = getLogger("DynamicJoinFilter");
+    LOG_TRACE(log, "DynamicJoinFilters::filterDynamicPartsByFilledJoin parts {}", parts != nullptr);
+    if (!parts)
+        return;
+
+    const auto * hash_join = typeid_cast<const HashJoin *>(&join);
+    if (!hash_join)
+        return;
+
+    const auto & blocks = hash_join->getJoinedData()->right_key_columns_for_filter;
+    if (blocks.empty())
+        return;
+
+    const auto & settings = context->getSettingsRef();
+
+    for (size_t i = 0; i < clauses.size(); ++i)
+    {
+        const auto & clause = clauses[i];
+        auto squashed = squashBlocks(clause.keys, blocks[i]);
+
+        // std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
+
+        auto set = std::make_shared<FutureSetFromTuple>(squashed, settings);
+        clause.set->setData(std::move(set));
+    }
+
+    const auto & primary_key = metadata->getPrimaryKey();
+    const Names & primary_key_column_names = primary_key.column_names;
+
+    KeyCondition key_condition(&actions, context, primary_key_column_names, primary_key.expression);
+    LOG_TRACE(log, "Key condition: {}", key_condition.toString());
+
+    auto parts_with_lock = parts->parts_ranges_ptr->get();
+
+    size_t prev_marks = 0;
+    size_t post_marks = 0;
+
+    for (auto & part_range : parts_with_lock.parts_ranges)
+    {
+        MarkRanges filtered_ranges;
+        for (auto & range : part_range.ranges)
+        {
+            prev_marks += range.getNumberOfMarks();
+
+            // std::cerr << "Range " << range.begin << ' ' << range.end << " has final mark " << part_range.data_part->index_granularity->hasFinalMark() << std::endl;
+            auto new_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                part_range.data_part,
+                range.begin,
+                range.end,
+                metadata,
+                key_condition,
+                {}, nullptr, settings, log);
+
+            for (auto & new_range : new_ranges)
+            {
+                // std::cerr << "New Range " << new_range.begin << ' ' << new_range.end << std::endl;
+                if (new_range.getNumberOfMarks())
+                {
+                    post_marks += new_range.getNumberOfMarks();
+                    filtered_ranges.push_back(new_range);
+                }
+            }
+        }
+
+        part_range.ranges = std::move(filtered_ranges);
+    }
+
+    LOG_TRACE(log, "Reading {}/{} marks after filtration.", post_marks, prev_marks);
+}
+
 
 JoinStep::JoinStep(
     const Header & left_header_,
@@ -92,6 +219,11 @@ JoinStep::JoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
+void JoinStep::setDynamicFilter(DynamicJoinFiltersPtr dynamic_filter_)
+{
+    dynamic_filter = std::move(dynamic_filter_);
+}
+
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
@@ -112,10 +244,18 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     }
     else
     {
+        auto finish_callback = [filter = this->dynamic_filter, algo = this->join]()
+        {
+            // LOG_TRACE(getLogger("JoinStep"), "Finish callback called. Filter {}", filter != nullptr);
+            if (filter)
+                filter->filterDynamicPartsByFilledJoin(*algo);
+        };
+
         joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
             std::move(pipelines[0]),
             std::move(pipelines[1]),
             join,
+            std::move(finish_callback),
             join_algorithm_header,
             max_block_size,
             min_block_size_bytes,
@@ -163,6 +303,13 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << name << ": " << value << '\n';
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
+
+    if (dynamic_filter)
+    {
+        settings.out << prefix << "Dynamic Filter\n";
+        auto expression = std::make_shared<ExpressionActions>(dynamic_filter->actions.clone());
+        expression->describeActions(settings.out, prefix);
+    }
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const

@@ -124,6 +124,22 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
 }
 
+// static void filterBlock(Block & block, const IColumn::Filter & filter)
+// {
+//     for (auto & elem : block)
+//     {
+//         if (elem.column->size() != filter.size())
+//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+//                 elem.column->size(), filter.size());
+
+//         if (elem.column->empty())
+//         {
+//             block.clear();
+//             return;
+//         }
+//     }
+// }
+
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
     const Block & right_sample_block_,
@@ -573,6 +589,16 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
+    ScatteredBlock right_key_columns_for_filter;
+    if (save_right_key_columns_for_filter)
+    {
+        right_key_columns_for_filter = filterColumnsPresentInSampleBlock(source_block, right_table_keys);
+        if (shrink_blocks)
+            right_key_columns_for_filter.shrinkToFit();
+
+        data->right_key_columns_for_filter.resize(table_join->getClauses().size());
+    }
+
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
 
@@ -611,7 +637,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         }
 
         doDebugAsserts();
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
+        data->blocks_allocated_size += block_to_save.allocatedBytes() + right_key_columns_for_filter.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         const auto * stored_block = &data->blocks.back();
         doDebugAsserts();
@@ -638,6 +664,22 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 /// Save rows with NULL keys
                 for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
                     save_nullmap |= (*null_map)[i];
+            }
+
+            if (save_right_key_columns_for_filter)
+            {
+                if (null_map)
+                    right_key_columns_for_filter.filter(*null_map);
+
+                right_key_columns_for_filter.filterBySelector();
+
+                const auto & required_names = right_keys_for_fiter_per_clause[onexpr_idx];
+
+                Block right_keys_for_clause;
+                for (const auto & name : required_names)
+                    right_keys_for_clause.insert(right_key_columns_for_filter.getByName(name));
+
+                data->right_key_columns_for_filter[onexpr_idx].emplace_back(right_keys_for_clause);
             }
 
             auto join_mask_col = JoinCommon::getColumnAsMask(source_block.getSourceBlock(), onexprs[onexpr_idx].condColumnNames().second);
@@ -1630,6 +1672,17 @@ void HashJoin::tryRerangeRightTableData()
         [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
     chassert(result);
     data->sorted = true;
+}
+
+void HashJoin::saveRightKeyColumnsForFilter(std::vector<Names> keys_per_clause)
+{
+    if (keys_per_clause.size() != table_join->getClauses().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid number of clauses. Expected {}, got {}",
+            table_join->getClauses().size(), keys_per_clause.size());
+
+    save_right_key_columns_for_filter = true;
+    right_keys_for_fiter_per_clause = std::move(keys_per_clause);
 }
 
 }

@@ -117,16 +117,14 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         params_,
         context_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
-    , log(getLogger(
-          "MergeTreePrefetchedReadPool("
-          + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
+    , log(getLogger("MergeTreePrefetchedReadPool(" + (storage_snapshot_->storage.getStorageID().getNameForLogs()) + ")"))
 {
-    /// Tasks creation might also create a lost of readers - check they do not
-    /// do any time consuming operations in ctor.
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::MergeTreePrefetchedReadPoolInit);
+    // /// Tasks creation might also create a lost of readers - check they do not
+    // /// do any time consuming operations in ctor.
+    // ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::MergeTreePrefetchedReadPoolInit);
 
-    fillPerPartStatistics();
-    fillPerThreadTasks(pool_settings.threads, pool_settings.sum_marks);
+    // fillPerPartStatistics();
+    // fillPerThreadTasks(pool_settings.threads, pool_settings.sum_marks);
 }
 
 std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTreeReader * reader, Priority priority)
@@ -183,6 +181,22 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    auto init = [this]()
+    {
+        auto parts_ranges_and_lock = parts_ranges_ptr->get();
+        const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
+
+        fillPerPartInfos(parts_ranges);
+
+        /// Tasks creation might also create a lost of readers - check they do not
+        /// do any time consuming operations in ctor.
+        ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::MergeTreePrefetchedReadPoolInit);
+
+        fillPerPartStatistics(parts_ranges);
+        fillPerThreadTasks(parts_ranges, pool_settings.threads, pool_settings.sum_marks);
+    };
+    std::call_once(init_flag, init);
+
     std::lock_guard lock(mutex);
 
     if (per_thread_tasks.empty())
@@ -313,7 +327,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, 
     return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, previous_task);
 }
 
-void MergeTreePrefetchedReadPool::fillPerPartStatistics()
+void MergeTreePrefetchedReadPool::fillPerPartStatistics(const RangesInDataParts & parts_ranges)
 {
     per_part_statistics.clear();
     per_part_statistics.reserve(parts_ranges.size());
@@ -363,7 +377,7 @@ ALWAYS_INLINE inline String getPartNameForLogging(const DataPartPtr & part)
 }
 
 
-void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_marks)
+void MergeTreePrefetchedReadPool::fillPerThreadTasks(const RangesInDataParts & parts_ranges, size_t threads, size_t sum_marks)
 {
     if (per_part_infos.empty())
         return;

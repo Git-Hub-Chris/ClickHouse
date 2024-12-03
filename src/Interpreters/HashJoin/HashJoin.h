@@ -355,6 +355,7 @@ public:
         Block sample_block; /// Block as it would appear in the BlockList
         ScatteredBlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        std::vector<BlocksList> right_key_columns_for_filter;
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -408,6 +409,8 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    void saveRightKeyColumnsForFilter(std::vector<Names> keys_per_clause);
+
 private:
     friend class NotJoinedHash;
 
@@ -438,6 +441,8 @@ private:
     mutable std::unique_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
+    bool save_right_key_columns_for_filter = false;
+    std::vector<Names> right_keys_for_fiter_per_clause;
 
     std::vector<Sizes> key_sizes;
 

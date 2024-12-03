@@ -386,6 +386,16 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
+        = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
+    if (read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0)
+    {
+        std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
+
+        if (fault(thread_local_rng))
+            read_split_ranges_into_intersecting_and_non_intersecting_injection = true;
+    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -454,6 +464,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
         block_size,
         context);
 
+    if (dynamically_filtered_parts)
+        dynamically_filtered_parts->parts_ranges_ptr = pool->getPartsWithRanges();
+
     Pipes pipes;
 
     for (size_t i = 0; i < pool_settings.threads; ++i)
@@ -502,7 +515,7 @@ Pipe ReadFromMergeTree::readFromPool(
         all_parts_are_remote &= is_remote;
     }
 
-    MergeTreeReadPoolPtr pool;
+    std::shared_ptr<MergeTreeReadPoolBase> pool;
 
     bool allow_prefetched_remote = all_parts_are_remote && settings[Setting::allow_prefetched_read_pool_for_remote_filesystem]
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method);
@@ -547,6 +560,9 @@ Pipe ReadFromMergeTree::readFromPool(
             context);
     }
 
+    if (dynamically_filtered_parts)
+        dynamically_filtered_parts->parts_ranges_ptr = pool->getPartsWithRanges();
+
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
     Pipes pipes;
@@ -581,7 +597,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
     bool has_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
-    MergeTreeReadPoolPtr pool;
+    std::shared_ptr<MergeTreeReadPoolBase> pool;
 
     if (is_parallel_reading_from_replicas)
     {
@@ -644,6 +660,9 @@ Pipe ReadFromMergeTree::readInOrder(
             block_size,
             context);
     }
+
+    if (dynamically_filtered_parts)
+        dynamically_filtered_parts->parts_ranges_ptr = pool->getPartsWithRanges();
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
     /// Otherwise rows will counted multiple times
@@ -876,14 +895,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
 
-    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
-        = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
-    std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
-
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
-        read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
-        fault(thread_local_rng) &&
+        read_split_ranges_into_intersecting_and_non_intersecting_injection &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info)
@@ -2200,6 +2214,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     // Attach QueryIdHolder if needed
     if (query_id_holder)
         pipeline.setQueryIdHolder(std::move(query_id_holder));
+}
+
+DynamiclyFilteredPartsRangesPtr ReadFromMergeTree::useDynamiclyFilteredParts()
+{
+    if (!dynamically_filtered_parts)
+        dynamically_filtered_parts = std::make_shared<DynamiclyFilteredPartsRanges>();
+
+    return dynamically_filtered_parts;
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)

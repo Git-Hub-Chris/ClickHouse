@@ -1285,6 +1285,8 @@ bool KeyCondition::tryPrepareSetIndex(
 
     Columns transformed_set_columns = set_columns;
 
+    // std::cerr << "+++++ set col size " << set_columns.front()->size() << std::endl;
+
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
     {
         const auto & key_column_type = data_types[indexes_mapping_index];
@@ -1382,6 +1384,8 @@ bool KeyCondition::tryPrepareSetIndex(
     }
 
     set_columns = std::move(transformed_set_columns);
+
+    // std::cerr << "+++2++ set col size " << set_columns.front()->size() << std::endl;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 

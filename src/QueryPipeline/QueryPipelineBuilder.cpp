@@ -385,6 +385,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
+    std::function<void()> finish_callback,
     const Block & output_header,
     size_t max_block_size,
     size_t min_block_size_bytes,
@@ -447,7 +448,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
                 connect(*outport, squashing->getInputs().front());
                 processors.emplace_back(squashing);
-                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, finish_callback);
                 connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                 processors.emplace_back(std::move(adding_joined));
             }
@@ -460,7 +461,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     {
         right->resize(1);
 
-        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, finish_callback);
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();
