@@ -13,7 +13,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
+struct FunctionExecuteProfile;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
@@ -59,6 +59,7 @@ public:
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
     ColumnWithTypeAndName reduce() const;
+    ColumnWithTypeAndName reduce(FunctionExecuteProfile & profile) const;
 
     Field operator[](size_t n) const override;
 
@@ -225,6 +226,9 @@ private:
     bool is_function_compiled;
 
     void appendArgument(const ColumnWithTypeAndName & column);
+
+    template<bool with_profile>
+    ColumnWithTypeAndName reduceImpl(FunctionExecuteProfile * profile) const;
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);
