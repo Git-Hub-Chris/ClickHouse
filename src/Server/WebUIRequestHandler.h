@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Server/HTTP/HTTPRequestHandler.h>
 
 
@@ -12,46 +14,43 @@ class IServer;
 
 class PlayWebUIRequestHandler : public HTTPRequestHandler
 {
-private:
-    IServer & server;
 public:
-    explicit PlayWebUIRequestHandler(IServer & server_);
+    explicit PlayWebUIRequestHandler(IServer &) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
 class DashboardWebUIRequestHandler : public HTTPRequestHandler
 {
-private:
-    IServer & server;
 public:
-    explicit DashboardWebUIRequestHandler(IServer & server_);
+    explicit DashboardWebUIRequestHandler(IServer &) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
 class BinaryWebUIRequestHandler : public HTTPRequestHandler
 {
-private:
-    IServer & server;
 public:
-    explicit BinaryWebUIRequestHandler(IServer & server_);
+    explicit BinaryWebUIRequestHandler(IServer &) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
 class MergesWebUIRequestHandler : public HTTPRequestHandler
 {
-private:
-    IServer & server;
 public:
-    explicit MergesWebUIRequestHandler(IServer & server_);
+    explicit MergesWebUIRequestHandler(IServer &) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
 class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 {
-private:
-    IServer & server;
 public:
-    explicit JavaScriptWebUIRequestHandler(IServer & server_);
+    explicit JavaScriptWebUIRequestHandler(IServer &) {}
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+};
+
+class ACMERequestHandler : public HTTPRequestHandler
+{
+public:
+    explicit ACMERequestHandler(IServer &) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
