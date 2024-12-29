@@ -41,6 +41,8 @@ sqlite3 "${DB_PATH}" 'CREATE TABLE table4 (a int, b integer, c tinyint, d smalli
 sqlite3 "${DB_PATH}" 'CREATE TABLE table5 (a character(20), b varchar(10), c real, d double, e double precision, f float)'
 
 
+sqlite3 "${DB_PATH}" 'CREATE TABLE table6 (col1 text, col2 int);'
+
 ${CLICKHOUSE_CLIENT} --query="select 'create database engine'";
 ${CLICKHOUSE_CLIENT} --query="CREATE DATABASE ${CURR_DATABASE} ENGINE = SQLite('${DB_PATH}')"
 
@@ -77,6 +79,20 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('\'', 8);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('\\\\', 9);" # Escaped backslash = \\, but we're in bash - so \\\\
 
 ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table3 ORDER BY col2'
+
+
+${CLICKHOUSE_CLIENT} --query="select 'create table engine with table6'";
+${CLICKHOUSE_CLIENT} --query='DROP TABLE IF EXISTS sqlite_table6'
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table6 (col1 FixedString(10), col2 Int32) ENGINE = SQLite('${DB_PATH}', 'table6')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table6 VALUES ('line\'6', 6);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table6 VALUES (NULL, 7);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table6 VALUES ('\'', 8);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table6 VALUES ('\\\\', 9);" # Escaped backslash = \\, but we're in bash - so \\\\
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table6 VALUES ('abc\0\0def', 10);"
+${CLICKHOUSE_CLIENT} --query="select 'Data from sqlite_table6 via clickhouse:'";
+${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table6 ORDER BY col2'
+${CLICKHOUSE_CLIENT} --query="select 'Data from table6 from sqlite:'";
+sqlite3 "${DB_PATH}" 'SELECT * FROM table6 ORDER BY col2;'
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
