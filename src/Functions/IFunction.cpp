@@ -250,7 +250,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
             auto temporary_result_type = removeNullable(result_type);
 
-            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run, profile);
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
@@ -371,7 +371,6 @@ static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
         column.column = recursiveRemoveSparse(column.column);
 }
 
-<<<<<<< HEAD
 IExecutableFunction::IExecutableFunction()
 {
     if (CurrentThread::isInitialized())
@@ -386,15 +385,11 @@ IExecutableFunction::IExecutableFunction()
 }
 
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
-=======
-ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
     bool dry_run,
     FunctionExecuteProfile * profile) const
->>>>>>> doing
 {
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
@@ -442,10 +437,6 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     return result;
 }
 
-<<<<<<< HEAD
-ColumnPtr IExecutableFunction::execute(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
-=======
 ColumnPtr IExecutableFunction::executeImplWithProfile(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -472,7 +463,6 @@ ColumnPtr IExecutableFunction::execute(
     size_t input_rows_count,
     bool dry_run,
     FunctionExecuteProfile * profile) const
->>>>>>> doing
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
 
@@ -648,7 +638,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     return buildImpl(arguments, return_type);
 }
 
-ColumnPtr IFunction::executeImpl(
+ColumnPtr IFunction::executeImplWithProfile(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
