@@ -5,6 +5,7 @@ table2
 table3
 table4
 table5
+table6
 show creare table:
 CREATE TABLE SQLite.table1\n(\n    `col1` Nullable(String),\n    `col2` Nullable(Int16)\n)\nENGINE = SQLite
 CREATE TABLE SQLite.table2\n(\n    `col1` Nullable(Int32),\n    `col2` Nullable(String)\n)\nENGINE = SQLite
@@ -31,6 +32,21 @@ not a null	2
 	4
 line\'6	6
 	7
+\'	8
+\\	9
+create table engine with table6
+Data from sqlite_table6 via clickhouse:
+line\'6\0\0\0\0	6
+\0\0\0\0\0\0\0\0\0\0	7
+\'\0\0\0\0\0\0\0\0\0	8
+\\\0\0\0\0\0\0\0\0\0	9
+abc\0\0\0\0\0\0\0	10
+Data from table6 from sqlite:
+line'6|6
+|7
+'|8
+\|9
+abc|10
 test table function
 line1	1
 line2	2
