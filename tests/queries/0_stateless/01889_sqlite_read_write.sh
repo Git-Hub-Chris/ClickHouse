@@ -93,6 +93,8 @@ ${CLICKHOUSE_CLIENT} --query="select 'Data from sqlite_table6 via clickhouse:'";
 ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table6 ORDER BY col2'
 ${CLICKHOUSE_CLIENT} --query="select 'Data from table6 from sqlite:'";
 sqlite3 "${DB_PATH}" 'SELECT * FROM table6 ORDER BY col2;'
+${CLICKHOUSE_CLIENT} --query="DROP TABLE sqlite_table6;"
+sqlite3 "${DB_PATH}" 'DROP TABLE table6;'
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
