@@ -655,6 +655,7 @@ public:
     explicit FunctionComparison(bool check_decimal_overflow_, bool allow_not_comparable_types_)
         : check_decimal_overflow(check_decimal_overflow_), allow_not_comparable_types(allow_not_comparable_types_) {}
 
+    bool isNoExcept() const override { return true; }
 private:
     bool check_decimal_overflow = true;
     bool allow_not_comparable_types = false;
