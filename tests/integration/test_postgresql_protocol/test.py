@@ -165,6 +165,7 @@ def test_python_client(started_cluster):
 
 def test_copy_command(started_cluster):
     node = cluster.instances["node"]
+
     ch = py_psql.connect(
         host=node.ip_address,
         port=server_port,
