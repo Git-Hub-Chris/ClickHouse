@@ -261,6 +261,7 @@ namespace ErrorCodes
     DECLARE(Bool, cache_populated_by_fetch, false, "When using zero-copy replication or SharedMergeTree, eagerly read the file into cache for each added part. This approximates the behavior and performance of using ReplicatedMergeTree on direct-attached storage. When enabling this, please make sure to also enable cache_on_write_operations in disks config.", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
+    DECLARE(Bool, allow_generate_min_max_data_insert_file, false, "Allow to generate min/max_insert_data file.", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, false, "Experimental background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", EXPERIMENTAL) \
     \
