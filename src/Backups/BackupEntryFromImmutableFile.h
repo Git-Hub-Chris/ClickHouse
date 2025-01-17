@@ -35,13 +35,11 @@ public:
     String getFilePath() const override { return file_path; }
 
 protected:
-    virtual UInt64 calculateSize() const;
-    UInt128 calculateChecksum(const ReadSettings & read_settings) const override;
-
-    /// For immutable files we don't use partial checksums.
-    bool isPartialChecksumAllowed() const override { return false; }
+    std::optional<UInt128> getPrecalculatedChecksum() const override { return passed_checksum; }
 
 private:
+    UInt64 calculateSize() const;
+
     const DiskPtr disk;
     const String file_path;
     const DataSourceDescription data_source_description;
