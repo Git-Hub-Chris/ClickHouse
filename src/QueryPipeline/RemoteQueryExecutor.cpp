@@ -280,8 +280,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::~RemoteQueryExecutor()
 {
 #if defined(OS_LINUX)
-    /// FIXME: fix it for parallel replicas (and remove "!extension")
-    if (!extension && read_context && !read_context->isCancelled())
+    if (read_context && !read_context->isCancelled())
     {
         LOG_FATAL(log, "Read context was not cancelled. This is a bug");
         abort();
