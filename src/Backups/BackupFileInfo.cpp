@@ -12,6 +12,12 @@
 #include <base/hex.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event BackupPreparingFileInfosMicroseconds;
+}
+
+
 namespace DB
 {
 
@@ -207,12 +213,14 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
 BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
+    LOG_TRACE(log, "Building file infos for backup entries");
+    auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
+
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
     std::atomic_bool failed = false;
-
-    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
