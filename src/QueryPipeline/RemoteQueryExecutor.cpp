@@ -984,14 +984,15 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     std::lock_guard lock(was_cancelled_mutex);
 
-    if (read_context)
-        read_context->cancel();
-
     if (was_cancelled)
         return false;
 
     if (resent_query || !read_context)
+    {
+        if (read_context)
+            read_context->cancel();
         read_context = std::make_unique<ReadContext>(*this);
+    }
 
     chassert(!has_postponed_packet);
 
