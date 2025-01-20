@@ -123,7 +123,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         cleanUnprocessed();
 
         stalled_status = REBALANCE_HAPPENED;
-        last_rebalance_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+        last_rebalance_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
 
         assignment.reset();
         waited_for_assignment = 0;
@@ -259,7 +259,7 @@ void KafkaConsumer::commit()
                 consumer->commit();
                 committed = true;
                 print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
-                last_commit_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+                last_commit_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
                 num_commits += 1;
             }
             catch (const cppkafka::HandleException & e)
@@ -409,7 +409,7 @@ ReadBufferPtr KafkaConsumer::consume()
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = consumer->poll_batch(batch_size,
                             std::chrono::milliseconds(actual_poll_timeout_ms));
-        last_poll_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+        last_poll_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
         num_messages_read += new_messages.size();
 
         resetIfStopped();
