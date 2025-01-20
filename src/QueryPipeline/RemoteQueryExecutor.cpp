@@ -606,7 +606,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
     /// TODO: remove this feature or implement async sending for it
     sendQuery();
 
-    /// Consecutive read will implicitly send query first.
     if (!read_context)
         return read();
     return readAsync();
