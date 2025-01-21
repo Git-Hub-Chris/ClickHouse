@@ -1,5 +1,6 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
+#include <base/defines.h>
 
 #include <cassert>
 #include <cmath>
@@ -313,7 +314,8 @@ static UHugeInt divide(UHugeInt lhs, UHugeInt rhs)
 static UHugeInt modulo(UHugeInt lhs, UHugeInt rhs)
 {
     UHugeInt remainder;
-    (void)divMod(lhs, rhs, remainder);
+    auto u = divMod(lhs, rhs, remainder);
+    UNUSED(u);
     return remainder;
 }
 
@@ -394,9 +396,9 @@ UHugeInt::operator bool() const
     return *this != UHugeInt(0);
 }
 
-void UHugeInt::toString(std::string & res) const
+void UHugeInt::toString(String & res) const
 {
-    std::string in;
+    String in;
     UHugeInt input = *this;
     UHugeInt remainder;
 
@@ -407,7 +409,7 @@ void UHugeInt::toString(std::string & res) const
             break;
         }
         input = divMod(input, UHugeInt(10), remainder);
-        in.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
+        in.insert(0, String(1, static_cast<char>('0' + remainder.lower)));
     }
     if (in.empty())
     {

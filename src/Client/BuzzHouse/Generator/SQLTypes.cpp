@@ -1,5 +1,4 @@
 #include <cstdint>
-#include <sys/types.h>
 
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
@@ -51,7 +50,7 @@ SQLType * TypeDeepCopy(SQLType * tp)
     }
     else if ((decp = dynamic_cast<DecimalType *>(tp)))
     {
-        return new DecimalType(decp->precision, decp->scale);
+        return new DecimalType(decp->short_notation, decp->precision, decp->scale);
     }
     else if ((st = dynamic_cast<StringType *>(tp)))
     {
@@ -148,6 +147,675 @@ SQLType * TypeDeepCopy(SQLType * tp)
     return nullptr;
 }
 
+String BoolType::typeName(const bool) const
+{
+    return "Bool";
+}
+
+String BoolType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    return "BOOL";
+}
+
+String BoolType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "BOOLEAN";
+}
+
+String BoolType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "INTEGER";
+}
+
+String IntType::typeName(const bool) const
+{
+    return fmt::format("{}Int{}", is_unsigned ? "U" : "", std::to_string(size));
+}
+
+String IntType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    switch (size)
+    {
+        case 8:
+            return fmt::format("TINYINT {}", is_unsigned ? " UNSIGNED" : "");
+        case 16:
+            return fmt::format("SMALLINT {}", is_unsigned ? " UNSIGNED" : "");
+        case 32:
+            return fmt::format("INT {}", is_unsigned ? " UNSIGNED" : "");
+        case 64:
+            return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
+        default:
+            assert(0);
+    }
+    return "";
+}
+
+String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    switch (size)
+    {
+        case 8:
+        case 16:
+            return "SMALLINT";
+        case 32:
+            return "INTEGER";
+        case 64:
+            return "BIGINT";
+        default:
+            assert(0);
+    }
+    return "";
+}
+
+String IntType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "INTEGER";
+}
+
+String FloatType::typeName(const bool) const
+{
+    return fmt::format("{}Float{}", size == 16 ? "B" : "", std::to_string(size));
+}
+
+String FloatType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    return (size == 32) ? "FLOAT" : "DOUBLE";
+}
+
+String FloatType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return (size == 32) ? "REAL" : "DOUBLE PRECISION";
+}
+
+String FloatType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "REAL";
+}
+
+String DateType::typeName(const bool) const
+{
+    return fmt::format("Date{}", extended ? "32" : "");
+}
+
+String DateType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    return "DATE";
+}
+
+String DateType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "DATE";
+}
+
+String DateType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String DateTimeType::typeName(const bool escape) const
+{
+    String ret;
+
+    ret += "DateTime";
+    if (extended)
+    {
+        ret += "64";
+    }
+    if (precision.has_value() || timezone.has_value())
+    {
+        ret += "(";
+        if (precision.has_value())
+        {
+            ret += std::to_string(precision.value());
+        }
+        if (timezone.has_value())
+        {
+            if (precision.has_value())
+            {
+                ret += ",";
+            }
+            if (escape)
+            {
+                ret += "\\";
+            }
+            ret += "'";
+            ret += timezone.value();
+            if (escape)
+            {
+                ret += "\\";
+            }
+            ret += "'";
+        }
+        ret += ")";
+    }
+    return ret;
+}
+
+String DateTimeType::MySQLtypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "DATETIME" : "TIMESTAMP";
+}
+
+String DateTimeType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "TIMESTAMP";
+}
+
+String DateTimeType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String DecimalType::typeName(const bool) const
+{
+    String ret;
+
+    ret += "Decimal";
+    if (short_notation.has_value())
+    {
+        ret += DecimalN_DecimalPrecision_Name(short_notation.value()).substr(1);
+        ret += "(";
+        ret += std::to_string(scale.value());
+        ret += ")";
+    }
+    else
+    {
+        if (precision.has_value())
+        {
+            ret += "(";
+            ret += std::to_string(precision.value());
+            if (scale.has_value())
+            {
+                ret += ",";
+                ret += std::to_string(scale.value());
+            }
+            ret += ")";
+        }
+    }
+    return ret;
+}
+
+String DecimalType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    String ret;
+
+    ret += "DECIMAL";
+    if (precision.has_value())
+    {
+        ret += "(";
+        ret += std::to_string(precision.value());
+        if (scale.has_value())
+        {
+            ret += ",";
+            ret += std::to_string(scale.value());
+        }
+        ret += ")";
+    }
+    return ret;
+}
+
+String DecimalType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
+{
+    return MySQLtypeName(rg, escape);
+}
+
+String DecimalType::SQLitetypeName(RandomGenerator & rg, const bool escape) const
+{
+    return MySQLtypeName(rg, escape);
+}
+
+String StringType::typeName(const bool) const
+{
+    if (precision.has_value())
+    {
+        return fmt::format("FixedString({})", std::to_string(precision.value()));
+    }
+    else
+    {
+        return "String";
+    }
+}
+
+String StringType::MySQLtypeName(RandomGenerator & rg, const bool) const
+{
+    if (precision.has_value())
+    {
+        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", std::to_string(precision.value()));
+    }
+    else
+    {
+        return rg.nextBool() ? "BLOB" : "TEXT";
+    }
+}
+
+String StringType::PostgreSQLtypeName(RandomGenerator & rg, const bool) const
+{
+    if (precision.has_value())
+    {
+        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", std::to_string(precision.value()));
+    }
+    else
+    {
+        return "TEXT";
+    }
+}
+
+String StringType::SQLitetypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String UUIDType::typeName(const bool) const
+{
+    return "UUID";
+}
+
+String UUIDType::MySQLtypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String UUIDType::PostgreSQLtypeName(RandomGenerator &, const bool escape) const
+{
+    return typeName(escape);
+}
+
+String UUIDType::SQLitetypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String EnumType::typeName(const bool escape) const
+{
+    String ret;
+
+    ret += "Enum";
+    ret += std::to_string(size);
+    ret += "(";
+    for (size_t i = 0; i < values.size(); i++)
+    {
+        const EnumValue & v = values[i];
+
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        for (const auto & c : v.val)
+        {
+            if (escape && c == '\'')
+            {
+                ret += "\\";
+            }
+            ret += c;
+        }
+        ret += " = ";
+        ret += std::to_string(v.number);
+    }
+    ret += ")";
+    return ret;
+}
+
+String EnumType::MySQLtypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String EnumType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String EnumType::SQLitetypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String IPv4Type::typeName(const bool) const
+{
+    return "IPv4";
+}
+
+String IPv4Type::MySQLtypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String IPv4Type::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String IPv4Type::SQLitetypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String IPv6Type::typeName(const bool) const
+{
+    return "IPv6";
+}
+
+String IPv6Type::MySQLtypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String IPv6Type::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String IPv6Type::SQLitetypeName(RandomGenerator & rg, const bool) const
+{
+    return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+String DynamicType::typeName(const bool) const
+{
+    return fmt::format("Dynamic{}", ntypes.has_value() ? ("(max_types=" + std::to_string(ntypes.value()) + ")") : "");
+}
+
+String DynamicType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String DynamicType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String DynamicType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String JSONType::typeName(const bool escape) const
+{
+    String ret;
+
+    ret += "JSON";
+    for (const auto & c : desc)
+    {
+        if (escape && c == '\'')
+        {
+            ret += '\\';
+        }
+        ret += c;
+    }
+    return ret;
+}
+
+String JSONType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    return "JSON";
+}
+
+String JSONType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    return "JSON";
+}
+
+String JSONType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    return "TEXT";
+}
+
+String Nullable::typeName(const bool escape) const
+{
+    return fmt::format("Nullable({})", subtype->typeName(escape));
+}
+
+String Nullable::MySQLtypeName(RandomGenerator & rg, const bool escape) const
+{
+    return subtype->MySQLtypeName(rg, escape);
+}
+
+String Nullable::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
+{
+    return subtype->PostgreSQLtypeName(rg, escape);
+}
+
+String Nullable::SQLitetypeName(RandomGenerator & rg, const bool escape) const
+{
+    return subtype->SQLitetypeName(rg, escape);
+}
+
+String LowCardinality::typeName(const bool escape) const
+{
+    return fmt::format("LowCardinality({})", subtype->typeName(escape));
+}
+
+String LowCardinality::MySQLtypeName(RandomGenerator & rg, const bool escape) const
+{
+    return subtype->MySQLtypeName(rg, escape);
+}
+
+String LowCardinality::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
+{
+    return subtype->PostgreSQLtypeName(rg, escape);
+}
+
+String LowCardinality::SQLitetypeName(RandomGenerator & rg, const bool escape) const
+{
+    return subtype->SQLitetypeName(rg, escape);
+}
+
+String GeoType::typeName(const bool) const
+{
+    return GeoTypes_Name(geo_type);
+}
+
+String GeoType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String GeoType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String GeoType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String ArrayType::typeName(const bool escape) const
+{
+    return fmt::format("Array({})", subtype->typeName(escape));
+}
+
+String ArrayType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
+{
+    SQLType * nsubtype = subtype;
+    Nullable * nl = nullptr;
+    LowCardinality * lc = nullptr;
+
+    while (true)
+    {
+        if ((nl = dynamic_cast<Nullable *>(nsubtype)))
+        {
+            nsubtype = nl->subtype;
+        }
+        else if ((lc = dynamic_cast<LowCardinality *>(nsubtype)))
+        {
+            nsubtype = lc->subtype;
+        }
+        else
+        {
+            break;
+        }
+    }
+    if (nsubtype)
+    {
+        return nsubtype->PostgreSQLtypeName(rg, escape) + "[]";
+    }
+    else
+    {
+        return "INT[]";
+    }
+}
+
+String ArrayType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String MapType::typeName(const bool escape) const
+{
+    return fmt::format("Map({},{})", key->typeName(escape), value->typeName(escape));
+}
+
+String MapType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String MapType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String MapType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String TupleType::typeName(const bool escape) const
+{
+    String ret;
+
+    ret += "Tuple(";
+    for (size_t i = 0; i < subtypes.size(); i++)
+    {
+        const SubType & sub = subtypes[i];
+
+        if (i != 0)
+        {
+            ret += ",";
+        }
+        if (sub.cname.has_value())
+        {
+            ret += "c";
+            ret += std::to_string(sub.cname.value());
+            ret += " ";
+        }
+        sub.subtype->typeName(escape);
+    }
+    ret += ")";
+    return ret;
+}
+
+String TupleType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String TupleType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String TupleType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String VariantType::typeName(const bool escape) const
+{
+    String ret;
+
+    ret += "Variant(";
+    for (size_t i = 0; i < subtypes.size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ",";
+        }
+        ret += subtypes[i]->typeName(escape);
+    }
+    ret += ")";
+    return ret;
+}
+
+String VariantType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String VariantType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String VariantType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String NestedType::typeName(const bool escape) const
+{
+    String ret;
+
+    ret += "Nested(";
+    for (size_t i = 0; i < subtypes.size(); i++)
+    {
+        const NestedSubType & sub = subtypes[i];
+
+        if (i != 0)
+        {
+            ret += ",";
+        }
+        ret += "c";
+        ret += std::to_string(sub.cname);
+        ret += " ";
+        ret += sub.subtype->typeName(escape);
+    }
+    ret += ")";
+    return ret;
+}
+
+String NestedType::MySQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String NestedType::PostgreSQLtypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
+String NestedType::SQLitetypeName(RandomGenerator &, const bool) const
+{
+    assert(0);
+    return "";
+}
+
 std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint32_t allowed_types)
 {
     assert(this->ids.empty());
@@ -236,7 +904,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();
     std::optional<uint32_t> precision = std::nullopt;
-    std::optional<std::string> timezone = std::nullopt;
+    std::optional<String> timezone = std::nullopt;
 
     if (dt)
     {
@@ -252,7 +920,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     }
     if ((!use64 || has_precision) && !fc.timezones.empty() && rg.nextSmallNumber() < 5)
     {
-        timezone = std::optional<std::string>(rg.pickRandomlyFromVector(fc.timezones));
+        timezone = std::optional<String>(rg.pickRandomlyFromVector(fc.timezones));
         if (dt)
         {
             dt->set_timezone(timezone.value());
@@ -344,27 +1012,64 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
         Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
+        std::optional<DecimalN_DecimalPrecision> short_notation = std::nullopt;
         std::optional<uint32_t> precision = std::nullopt;
         std::optional<uint32_t> scale = std::nullopt;
 
         if (rg.nextBool())
         {
-            precision = std::optional<uint32_t>((rg.nextRandomUInt32() % 10) + 1);
-
+            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(
+                (rg.nextRandomUInt32()
+                 % static_cast<uint32_t>(
+                     (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                            : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128))
+                + 1));
+            switch (short_notation.value())
+            {
+                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                    precision = std::optional<uint32_t>(9);
+                    break;
+                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                    precision = std::optional<uint32_t>(18);
+                    break;
+                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                    precision = std::optional<uint32_t>(38);
+                    break;
+                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                    precision = std::optional<uint32_t>(78);
+                    break;
+            }
+            scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
             if (dec)
             {
-                dec->set_precision(precision.value());
+                DecimalN * dn = dec->mutable_decimaln();
+
+                dn->set_precision(short_notation.value());
+                dn->set_scale(scale.value());
             }
+        }
+        else
+        {
+            DecimalSimple * ds = dec ? dec->mutable_decimal_simple() : nullptr;
+
             if (rg.nextBool())
             {
-                scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 77 : 65)) + 1);
                 if (dec)
                 {
-                    dec->set_scale(scale.value());
+                    ds->set_precision(precision.value());
+                }
+                if (rg.nextBool())
+                {
+                    scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+                    if (dec)
+                    {
+                        ds->set_scale(scale.value());
+                    }
                 }
             }
         }
-        res = new DecimalType(precision, scale);
+        res = new DecimalType(short_notation, precision, scale);
     }
     else if (bool_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + 1))
     {
@@ -398,7 +1103,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         for (uint32_t i = 0; i < nvalues; i++)
         {
-            const std::string & nval = enum_values[i];
+            const String & nval = enum_values[i];
             const int32_t num = static_cast<const int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
 
             if (edef)
@@ -454,7 +1159,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
                + ipv4_type + ipv6_type + j_type + 1))
     {
-        std::string desc;
+        String desc;
         std::vector<JSubType> subcols;
         JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
         const uint32_t nclauses = rg.nextMediumNumber() % 7;
@@ -501,11 +1206,11 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 const uint32_t ncols = (rg.nextMediumNumber() % 4) + 1;
                 JSONPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
                 ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
-                std::string npath;
+                String npath;
 
                 for (uint32_t j = 0; j < ncols; j++)
                 {
-                    std::string nbuf;
+                    String nbuf;
                     Column * col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 
                     if (j != 0)
@@ -514,7 +1219,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                         npath += ".";
                     }
                     desc += '`';
-                    rg.nextJSONCol(nbuf);
+                    nbuf += rg.nextJSONCol();
                     npath += nbuf;
                     desc += nbuf;
                     desc += '`';
@@ -524,8 +1229,13 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                     }
                 }
                 desc += " ";
-                SQLType * jtp = randomNextType(rg, ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
-                jtp->typeName(desc, false);
+
+                const uint32_t type_mask_backup = this->next_type_mask;
+                this->next_type_mask = fc.type_mask & ~(allow_nested | allow_enum);
+                SQLType * jtp = randomNextType(rg, this->next_type_mask, col_counter, tp ? jpt->mutable_type() : nullptr);
+                this->next_type_mask = type_mask_backup;
+
+                desc += jtp->typeName(false);
                 subcols.push_back(JSubType(npath, jtp));
             }
         }
@@ -562,22 +1272,6 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     return res;
 }
 
-SQLType *
-StatementGenerator::generateArraytype(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
-{
-    this->depth++;
-    SQLType * k = this->randomNextType(rg, allowed_types, col_counter, tp);
-    this->depth--;
-    return new ArrayType(k);
-}
-
-SQLType * StatementGenerator::generateArraytype(RandomGenerator & rg, const uint32_t allowed_types)
-{
-    uint32_t col_counter = 0;
-
-    return generateArraytype(rg, allowed_types, col_counter, nullptr);
-}
-
 SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 60;
@@ -596,7 +1290,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (/*non_nullable_type && */ nopt < (non_nullable_type + 1))
+    if (non_nullable_type && nopt < (non_nullable_type + 1))
     {
         //non nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
@@ -618,8 +1312,12 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
     {
         //array
-        const uint32_t nallowed = allowed_types & ~(allow_nested | ((allowed_types & allow_nullable_inside_array) ? 0 : allow_nullable));
-        return generateArraytype(rg, nallowed, col_counter, tp ? tp->mutable_array() : nullptr);
+        TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
+
+        this->depth++;
+        SQLType * k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
+        this->depth--;
+        return new ArrayType(k);
     }
     else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
     {
@@ -627,10 +1325,10 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         MapTypeDef * mt = tp ? tp->mutable_map() : nullptr;
 
         this->depth++;
-        SQLType * k
-            = this->randomNextType(rg, allowed_types & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
+        SQLType * k = this->randomNextType(
+            rg, this->next_type_mask & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
         this->width++;
-        SQLType * v = this->randomNextType(rg, allowed_types & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+        SQLType * v = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
         this->depth--;
         this->width--;
         return new MapType(k, v);
@@ -660,7 +1358,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
                 tcd->mutable_col()->set_column("c" + std::to_string(ncname));
                 opt_cname = std::optional<uint32_t>(ncname);
             }
-            SQLType * k = this->randomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
+            SQLType * k
+                = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
             subtypes.push_back(SubType(opt_cname, k));
         }
         this->depth--;
@@ -681,7 +1380,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
             subtypes.push_back(this->randomNextType(
-                rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
+                rg, this->next_type_mask & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
         }
         this->depth--;
         return new VariantType(subtypes);
@@ -704,7 +1403,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             {
                 tcd->mutable_col()->set_column("c" + std::to_string(cname));
             }
-            SQLType * k = this->randomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+            SQLType * k
+                = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
             subtypes.push_back(NestedSubType(cname, k));
         }
         this->depth--;
@@ -730,14 +1430,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     return nullptr;
 }
 
-SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types)
-{
-    uint32_t col_counter = 0;
-
-    return randomNextType(rg, allowed_types, col_counter, nullptr);
-}
-
-void appendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right)
+void appendDecimal(RandomGenerator & rg, String & ret, const uint32_t left, const uint32_t right)
 {
     ret += rg.nextBool() ? "-" : "";
     if (left > 0)
@@ -772,12 +1465,11 @@ void appendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left,
     }
 }
 
-template <bool Extremes>
-static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
+static inline void nextFloatingPoint(RandomGenerator & rg, const bool extremes, String & ret)
 {
     const uint32_t next_option = rg.nextLargeNumber();
 
-    if (Extremes && next_option < 25)
+    if (extremes && next_option < 25)
     {
         if (next_option < 17)
         {
@@ -785,7 +1477,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
         }
         ret += "nan";
     }
-    else if (Extremes && next_option < 49)
+    else if (extremes && next_option < 49)
     {
         if (next_option < 41)
         {
@@ -793,7 +1485,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
         }
         ret += "inf";
     }
-    else if (Extremes && next_option < 73)
+    else if (extremes && next_option < 73)
     {
         if (next_option < 65)
         {
@@ -819,7 +1511,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
     }
 }
 
-void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes & geo_type)
+void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_type)
 {
     const uint32_t limit = rg.nextLargeNumber() % 10;
 
@@ -827,9 +1519,9 @@ void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes &
     {
         case GeoTypes::Point:
             ret += "(";
-            nextFloatingPoint<false>(rg, ret);
+            nextFloatingPoint(rg, false, ret);
             ret += ",";
-            nextFloatingPoint<false>(rg, ret);
+            nextFloatingPoint(rg, false, ret);
             ret += ")";
             break;
         case GeoTypes::Ring:
@@ -842,9 +1534,9 @@ void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes &
                     ret += ", ";
                 }
                 ret += "(";
-                nextFloatingPoint<false>(rg, ret);
+                nextFloatingPoint(rg, false, ret);
                 ret += ",";
-                nextFloatingPoint<false>(rg, ret);
+                nextFloatingPoint(rg, false, ret);
                 ret += ")";
             }
             ret += "]";
@@ -868,9 +1560,9 @@ void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes &
                         ret += ", ";
                     }
                     ret += "(";
-                    nextFloatingPoint<false>(rg, ret);
+                    nextFloatingPoint(rg, false, ret);
                     ret += ",";
-                    nextFloatingPoint<false>(rg, ret);
+                    nextFloatingPoint(rg, false, ret);
                     ret += ")";
                 }
                 ret += "]";
@@ -904,9 +1596,9 @@ void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes &
                             ret += ", ";
                         }
                         ret += "(";
-                        nextFloatingPoint<false>(rg, ret);
+                        nextFloatingPoint(rg, false, ret);
                         ret += ",";
-                        nextFloatingPoint<false>(rg, ret);
+                        nextFloatingPoint(rg, false, ret);
                         ret += ")";
                     }
                     ret += "]";
@@ -918,7 +1610,7 @@ void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes &
     }
 }
 
-void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string & ret, SQLType * tp)
+void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, String & ret, SQLType * tp)
 {
     IntType * itp;
     DateType * dtp;
@@ -976,18 +1668,18 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
     }
     else if (dynamic_cast<FloatType *>(tp))
     {
-        nextFloatingPoint<true>(rg, ret);
+        nextFloatingPoint(rg, true, ret);
     }
     else if ((dtp = dynamic_cast<DateType *>(tp)))
     {
         ret += "'";
         if (dtp->extended)
         {
-            rg.nextDate32(ret);
+            ret += rg.nextDate32();
         }
         else
         {
-            rg.nextDate(ret);
+            ret += rg.nextDate();
         }
         ret += "'";
     }
@@ -996,11 +1688,11 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
         ret += "'";
         if (dttp->extended)
         {
-            rg.nextDateTime64(ret);
+            ret += rg.nextDateTime64();
         }
         else
         {
-            rg.nextDateTime(ret);
+            ret += rg.nextDateTime();
         }
         ret += "'";
     }
@@ -1015,7 +1707,7 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
     {
         const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
 
-        rg.nextString(ret, "'", true, limit);
+        ret += rg.nextString("'", true, limit);
     }
     else if (dynamic_cast<const BoolType *>(tp))
     {
@@ -1030,19 +1722,19 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
     else if (dynamic_cast<UUIDType *>(tp))
     {
         ret += "'";
-        rg.nextUUID(ret);
+        ret += rg.nextUUID();
         ret += "'";
     }
     else if (dynamic_cast<IPv4Type *>(tp))
     {
         ret += "'";
-        rg.nextIPv4(ret);
+        ret += rg.nextIPv4();
         ret += "'";
     }
     else if (dynamic_cast<IPv6Type *>(tp))
     {
         ret += "'";
-        rg.nextIPv6(ret);
+        ret += rg.nextIPv6();
         ret += "'";
     }
     else
@@ -1051,7 +1743,7 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
     }
 }
 
-void StatementGenerator::strAppendMap(RandomGenerator & rg, std::string & ret, MapType * mt)
+void StatementGenerator::strAppendMap(RandomGenerator & rg, String & ret, MapType * mt)
 {
     std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_nested_rows);
     const uint64_t limit = rows_dist(rg.generator);
@@ -1070,7 +1762,7 @@ void StatementGenerator::strAppendMap(RandomGenerator & rg, std::string & ret, M
     ret += ")";
 }
 
-void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, const uint64_t limit)
+void StatementGenerator::strAppendArray(RandomGenerator & rg, String & ret, SQLType * tp, const uint64_t limit)
 {
     ret += "[";
     for (uint64_t i = 0; i < limit; i++)
@@ -1084,14 +1776,14 @@ void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret,
     ret += "]";
 }
 
-void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret, ArrayType * at)
+void StatementGenerator::strAppendArray(RandomGenerator & rg, String & ret, ArrayType * at)
 {
     std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_nested_rows);
 
     strAppendArray(rg, ret, at->subtype, rows_dist(rg.generator));
 }
 
-void StatementGenerator::strAppendTuple(RandomGenerator & rg, std::string & ret, TupleType * at)
+void StatementGenerator::strAppendTuple(RandomGenerator & rg, String & ret, TupleType * at)
 {
     ret += "(";
     for (const auto & entry : at->subtypes)
@@ -1102,7 +1794,7 @@ void StatementGenerator::strAppendTuple(RandomGenerator & rg, std::string & ret,
     ret += ")";
 }
 
-void StatementGenerator::strAppendVariant(RandomGenerator & rg, std::string & ret, VariantType * vtp)
+void StatementGenerator::strAppendVariant(RandomGenerator & rg, String & ret, VariantType * vtp)
 {
     if (vtp->subtypes.empty())
     {
@@ -1114,7 +1806,7 @@ void StatementGenerator::strAppendVariant(RandomGenerator & rg, std::string & re
     }
 }
 
-void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
+void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, String & ret)
 {
     std::uniform_int_distribution<int> jopt(1, 3);
     int nelems = 0;
@@ -1159,7 +1851,7 @@ void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth,
     ret += "]";
 }
 
-void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
+void strBuildJSONElement(RandomGenerator & rg, String & ret)
 {
     std::uniform_int_distribution<int> opts(1, 20);
 
@@ -1199,41 +1891,41 @@ void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
         case 11:
         case 12:
         case 13: //string
-            rg.nextString(ret, "\"", false, rg.nextRandomUInt32() % 1009);
+            ret += rg.nextString("\"", false, rg.nextRandomUInt32() % 1009);
             break;
         case 14: //date
             ret += '"';
-            rg.nextDate(ret);
+            ret += rg.nextDate();
             ret += '"';
             break;
         case 15: //date32
             ret += '"';
-            rg.nextDate32(ret);
+            ret += rg.nextDate32();
             ret += '"';
             break;
         case 16: //datetime
             ret += '"';
-            rg.nextDateTime(ret);
+            ret += rg.nextDateTime();
             ret += '"';
             break;
         case 17: //datetime64
             ret += '"';
-            rg.nextDateTime64(ret);
+            ret += rg.nextDateTime64();
             ret += '"';
             break;
         case 18: //uuid
             ret += '"';
-            rg.nextUUID(ret);
+            ret += rg.nextUUID();
             ret += '"';
             break;
         case 19: //ipv4
             ret += '"';
-            rg.nextIPv4(ret);
+            ret += rg.nextIPv4();
             ret += '"';
             break;
         case 20: //ipv6
             ret += '"';
-            rg.nextIPv6(ret);
+            ret += rg.nextIPv6();
             ret += '"';
             break;
         default:
@@ -1241,7 +1933,7 @@ void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
     }
 }
 
-void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
+void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, String & ret)
 {
     ret += "{";
     if (jdepth && jwidth && rg.nextSmallNumber() < 9)
@@ -1258,7 +1950,7 @@ void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
                 ret += ",";
             }
             ret += "\"";
-            rg.nextJSONCol(ret);
+            ret += rg.nextJSONCol();
             ret += "\":";
             switch (jopt(rg.generator))
             {
@@ -1279,7 +1971,7 @@ void strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, std:
     ret += "}";
 }
 
-void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, SQLType * tp)
+void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, String & ret, SQLType * tp)
 {
     MapType * mt;
     Nullable * nl;
@@ -1322,13 +2014,17 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     else if (dynamic_cast<DynamicType *>(tp))
     {
         uint32_t col_counter = 0;
-        SQLType * next = randomNextType(rg, allow_nullable | allow_JSON, col_counter, nullptr);
+        const uint32_t type_mask_backup = this->next_type_mask;
+
+        this->next_type_mask = fc.type_mask & ~(allow_dynamic | allow_nested);
+        SQLType * next = randomNextType(rg, this->next_type_mask, col_counter, nullptr);
+        this->next_type_mask = type_mask_backup;
 
         strAppendAnyValueInternal(rg, ret, next);
         if (rg.nextMediumNumber() < 4)
         {
             ret += "::";
-            next->typeName(ret, false);
+            ret += next->typeName(false);
         }
         delete next;
     }
@@ -1371,13 +2067,13 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     }
 }
 
-void StatementGenerator::strAppendAnyValue(RandomGenerator & rg, std::string & ret, SQLType * tp)
+void StatementGenerator::strAppendAnyValue(RandomGenerator & rg, String & ret, SQLType * tp)
 {
     strAppendAnyValueInternal(rg, ret, tp);
     if (rg.nextSmallNumber() < 7)
     {
         ret += "::";
-        tp->typeName(ret, false);
+        ret += tp->typeName(false);
     }
 }
 
