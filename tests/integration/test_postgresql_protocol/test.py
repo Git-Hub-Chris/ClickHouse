@@ -4,7 +4,9 @@ import datetime
 import decimal
 import logging
 import os
+import random
 import uuid
+from io import StringIO
 
 import psycopg2 as py_psql
 import psycopg2.extras
@@ -160,6 +162,41 @@ def test_python_client(started_cluster):
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
     cur.execute("DROP DATABASE x")
+
+
+def test_copy_command(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    file_index = random.randint(0, 100000000)
+
+    cur.execute("drop table if exists test;")
+    cur.execute("drop table if exists test_recreated;")
+
+    cur.execute("create table test (x UInt32) engine=Memory();")
+    cur.execute("insert into test values (42),(43),(44),(45);")
+    cur.execute("select * from test order by x;")
+
+    assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
+
+    with open("out.csv", "w") as f:
+        cur.copy_to(file=f, table="test")
+    with open("out.csv", "r") as f:
+        assert f.read() == "42\n43\n44\n45\n"
+
+    cur.execute("create table test_recreated (x UInt32) engine=Memory();")
+    data_to_copy = "1\n2\n3\n4\n5\n"
+    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x",))
+    cur.execute("select * from test_recreated order by x;")
+
+    assert cur.fetchall() == [(1,), (2,), (3,), (4,), (5,)]
 
 
 def test_java_client(started_cluster):
