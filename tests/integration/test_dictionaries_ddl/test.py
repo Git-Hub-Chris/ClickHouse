@@ -60,8 +60,8 @@ node5 = cluster.add_instance(
 
 def create_mysql_conn(user, password, hostname, port):
     logging.debug(
-        "Created MySQL connection user:{}, password:{}, host:{}, port{}".format(
-            user, password, hostname, port
+        "Created MySQL connection user:{}, host:{}, port{}".format(
+            user, hostname, port
         )
     )
     return pymysql.connect(user=user, password=password, host=hostname, port=port)
