@@ -76,7 +76,7 @@ class SourceMySQL(ExternalSource):
 
     def create_mysql_conn(self):
         logging.debug(
-            f"pymysql connect {self.user}, {self.password}, {self.internal_hostname}, {self.internal_port}"
+            f"pymysql connect {self.user}, {self.internal_hostname}, {self.internal_port}"
         )
         self.connection = pymysql.connect(
             user=self.user,
