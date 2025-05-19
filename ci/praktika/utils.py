@@ -116,7 +116,10 @@ class Shell:
     def get_output(cls, command, strict=False, verbose=False):
         if verbose:
             sanitized_command = cls.sanitize_command(command)
-            print(f"Run command [{sanitized_command}]")
+            if "redacted ***" not in sanitized_command and any(keyword in command for keyword in ["--secret-id", "--access-token", "--password"]):
+                print("WARNING: Command contains sensitive data and will not be logged.")
+            else:
+                print(f"Run command [{sanitized_command}]")
         res = subprocess.run(
             command,
             shell=True,
@@ -149,8 +152,16 @@ class Shell:
         Redacts sensitive information from a command string.
         For example, replaces secrets or keys with '***'.
         """
-        # Example: Redact AWS secret keys or other patterns
-        redacted_command = re.sub(r'(--secret-id\s+\S+|--query\s+\S+)', r'--redacted ***', command)
+        # Redact AWS secret keys, access tokens, and other patterns
+        patterns = [
+            r'(--secret-id\s+\S+)',  # AWS secret ID
+            r'(--query\s+\S+)',      # Query parameters
+            r'(--access-token\s+\S+)',  # Access tokens
+            r'(--password\s+\S+)',   # Passwords
+        ]
+        redacted_command = command
+        for pattern in patterns:
+            redacted_command = re.sub(pattern, r'--redacted ***', redacted_command)
         return redacted_command
 
     @classmethod
