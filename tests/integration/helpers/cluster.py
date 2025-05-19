@@ -3514,6 +3514,8 @@ class ClickHouseInstance:
             sql_for_log = sql[:1000]
         else:
             sql_for_log = sql
+        # Mask sensitive information in the SQL query
+        sql_for_log = re.sub(r"IDENTIFIED BY\s+'[^']*'", "IDENTIFIED BY '***'", sql_for_log)
         logging.debug("Executing query %s on %s", sql_for_log, self.name)
         return self.client.query(
             sql,
