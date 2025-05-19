@@ -74,9 +74,10 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
         HTTPServer.address_family = socket.AF_INET6
     httpd = HTTPServer(server_address, TSVHTTPHandler)
     if schema == "https":
-        httpd.socket = ssl.wrap_socket(
-            httpd.socket, certfile=cert_path, server_side=True
-        )
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(certfile=cert_path)
+        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
     httpd.serve_forever()
 
 
