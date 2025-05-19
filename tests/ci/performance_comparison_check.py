@@ -169,7 +169,8 @@ def main():
         docker_env,
         docker_image,
     )
-    logging.info("Going to run command %s", run_command)
+    sanitized_run_command = run_command.replace(database_password, "***")
+    logging.info("Going to run command %s", sanitized_run_command)
 
     run_log_path = temp_path / "run.log"
     compare_log_path = result_path / "compare.log"
