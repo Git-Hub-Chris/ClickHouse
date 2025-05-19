@@ -516,12 +516,12 @@
         // Add the first entry (workflow level)
         baseParams.set(`name_0`, nameArray[0]);
         pathNames.push(nameArray[0]);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[0]}</a>`);
+        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${encodeURIComponent(baseParams.toString())}">${encodeURIComponent(nameArray[0])}</a>`);
         // Add the second entry (job level)
         if (nameArray.length > 1) {
             baseParams.set(`name_1`, nameArray[1]);
             pathNames.push(nameArray[1]);
-            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[1]}</a>`);
+            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${encodeURIComponent(baseParams.toString())}">${encodeURIComponent(nameArray[1])}</a>`);
         }
         // Iterate through the nameArray starting at index 0
         for (const [index, name] of nameArray.entries()) {
@@ -531,7 +531,7 @@
                 if (nextResult) {
                     baseParams.set(`name_${index}`, nextResult.name);
                     pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
-                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
+                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${encodeURIComponent(baseParams.toString())}">${encodeURIComponent(nextResult.name)}</a>`);
                     currentObj = nextResult; // Move to the next object in the hierarchy
                 } else {
                     console.error(`Name "${name}" not found in results array.`);
