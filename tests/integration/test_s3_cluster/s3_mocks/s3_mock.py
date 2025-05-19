@@ -1,12 +1,12 @@
 import sys
 
 from bottle import request, response, route, run
-
+import html
 
 @route("/<_bucket>/<_path:path>")
 def server(_bucket, _path):
     result = (
-        request.headers["MyCustomHeader"]
+        html.escape(request.headers["MyCustomHeader"])
         if "MyCustomHeader" in request.headers
         else "unknown"
     )
