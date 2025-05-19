@@ -4574,7 +4574,7 @@ class ClickHouseInstance:
                 base_secrets_dir = self.path
             from_dir = self.secrets_dir
             to_dir = p.abspath(p.join(base_secrets_dir, "secrets"))
-            logging.debug(f"Copy secret from {from_dir} to {to_dir}")
+            logging.debug("Copying secret to the target directory.")
             shutil.copytree(
                 self.secrets_dir,
                 p.abspath(p.join(base_secrets_dir, "secrets")),
