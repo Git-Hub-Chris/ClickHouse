@@ -48,13 +48,13 @@ def upload_file():
         # empty file without a filename.
         if file.filename == "":
             flash("No selected file")
-            return redirect(request.url)
+            return redirect(url_for("upload_file"))
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             fullpath = os.path.normpath(os.path.join(app.config["UPLOAD_FOLDER"], filename))
             if not fullpath.startswith(os.path.abspath(app.config["UPLOAD_FOLDER"])):
                 flash("Invalid file path")
-                return redirect(request.url)
+                return redirect(url_for("upload_file"))
             file.save(fullpath)
             return redirect(url_for("upload_file", name=filename))
     return """
