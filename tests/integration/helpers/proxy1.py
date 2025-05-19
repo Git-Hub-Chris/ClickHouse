@@ -62,7 +62,7 @@ class Proxy1:
     def start(self, address):
         self._address = address
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.bind(("", 0))
+        self._sock.bind(("127.0.0.1", 0))
         self._sock.listen(1)
         self._runner = threading.Thread(target=self._run)
         self._runner.start()
