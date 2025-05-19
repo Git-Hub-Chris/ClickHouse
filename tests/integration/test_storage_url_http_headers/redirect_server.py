@@ -1,6 +1,6 @@
 import http.server
 import sys
-
+from urllib.parse import quote
 REDIRECT_HOST = ""
 REDIRECT_PORT = 0
 
@@ -21,7 +21,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             global REDIRECT_HOST, REDIRECT_PORT
             self.send_response(302)
-            target_location = f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{self.path}"
+            sanitized_path = quote(self.path)
+            target_location = f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{sanitized_path}"
             self.send_header("Location", target_location)
             self.end_headers()
             self.wfile.write(b'{"status":"redirected"}')
