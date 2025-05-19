@@ -9,7 +9,7 @@ def run_command(command, wait=False):
     print("{} - execute shell command:{}".format(datetime.datetime.now(), command))
     lines = []
     p = subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
     if wait:
         for l in iter(p.stdout.readline, b""):
@@ -65,9 +65,17 @@ def upload_file():
 
 @app.route("/run", methods=["GET", "POST"])
 def parse_request():
-    data = request.data  # data is empty
-    run_command(data, wait=True)
-    return "Ok"
+    ALLOWED_COMMANDS = {
+        "list_files": ["ls", "-l"],
+        "show_date": ["date"]
+    }
+    data = request.data.decode("utf-8").strip()  # Decode and sanitize input
+    if data in ALLOWED_COMMANDS:
+        command = ALLOWED_COMMANDS[data]
+        run_command(command, wait=True)
+        return "Command executed successfully"
+    else:
+        return "Invalid command", 400
 
 
 if __name__ == "__main__":
