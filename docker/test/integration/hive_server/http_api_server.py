@@ -42,7 +42,7 @@ def upload_file():
         # check if the post request has the file part
         if "file" not in request.files:
             flash("No file part")
-            return redirect(request.url)
+            return redirect(url_for("upload_file"))
         file = request.files["file"]
         # If the user does not select a file, the browser submits an
         # empty file without a filename.
