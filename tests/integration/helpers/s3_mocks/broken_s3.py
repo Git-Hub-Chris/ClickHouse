@@ -386,7 +386,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.read_all_input()
 
         self.send_response(307)
-        url = f"http://{host}:{port}{self.path}"
+        sanitized_path = urllib.parse.quote(self.path, safe="/?&=")
+        url = f"http://{host}:{port}{sanitized_path}"
         self.log_message("redirect to %s", url)
         self.send_header("Location", url)
         self.end_headers()
