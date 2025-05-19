@@ -1,5 +1,6 @@
 import datetime
 import os
+from werkzeug.utils import secure_filename
 import subprocess
 
 from flask import Flask, flash, redirect, request, url_for
@@ -49,8 +50,12 @@ def upload_file():
             flash("No selected file")
             return redirect(request.url)
         if file and allowed_file(file.filename):
-            filename = file.filename
-            file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+            filename = secure_filename(file.filename)
+            fullpath = os.path.normpath(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+            if not fullpath.startswith(os.path.abspath(app.config["UPLOAD_FOLDER"])):
+                flash("Invalid file path")
+                return redirect(request.url)
+            file.save(fullpath)
             return redirect(url_for("upload_file", name=filename))
     return """
     <!doctype html>
