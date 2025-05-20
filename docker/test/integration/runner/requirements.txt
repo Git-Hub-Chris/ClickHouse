@@ -88,7 +88,7 @@ redis==5.0.1
 requests-kerberos==0.14.0
 requests==2.32.2
 s3transfer==0.10.1
-setuptools==75.8.2
+setuptools==78.1.1
 simplejson==3.19.2
 six==1.16.0
 soupsieve==2.5
