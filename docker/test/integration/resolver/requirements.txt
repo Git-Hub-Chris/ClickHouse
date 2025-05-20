@@ -2,5 +2,5 @@ bottle==0.12.25
 packaging==24.1
 pip==23.3
 pipdeptree==2.23.0
-setuptools==70.0.0
+setuptools==78.1.1
 wheel==0.45.1
