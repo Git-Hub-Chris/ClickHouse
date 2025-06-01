@@ -5,6 +5,8 @@ env:
   PYTHONUNBUFFERED: 1
 
 name: BuildStageWF
+permissions:
+  contents: read
 
 'on':
   workflow_call:
