@@ -2,6 +2,8 @@ env:
   PYTHONUNBUFFERED: 1
 
 name: StageWF
+permissions:
+  contents: read
 
 'on':
   workflow_call:
