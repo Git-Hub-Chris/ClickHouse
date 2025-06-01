@@ -2,6 +2,8 @@
 # https://github.com/orgs/community/discussions/9050
 
 name: Testing workflow
+permissions:
+  contents: read
 'on':
   workflow_call:
     inputs:
