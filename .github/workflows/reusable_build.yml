@@ -45,6 +45,8 @@ jobs:
   Build:
     name: Build-${{inputs.build_name}}
     if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
+    permissions:
+      contents: read
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
