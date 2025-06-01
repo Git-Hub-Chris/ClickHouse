@@ -1,6 +1,10 @@
 # yamllint disable rule:comments-indentation
 name: PullRequestCI
 
+permissions:
+  contents: read
+  pull-requests: write
+
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
