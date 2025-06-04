@@ -1,5 +1,7 @@
 # yamllint disable rule:comments-indentation
 name: MergeQueueCI
+permissions:
+  contents: read
 
 env:
   # Force the stdout and stderr streams to be unbuffered
