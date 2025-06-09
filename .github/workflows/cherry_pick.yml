@@ -1,5 +1,8 @@
 name: CherryPick
 
+permissions:
+  contents: read
+
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
