@@ -1,5 +1,9 @@
 name: AutoReleases
 
+permissions:
+  contents: write
+  statuses: write
+
 env:
   PYTHONUNBUFFERED: 1
 
