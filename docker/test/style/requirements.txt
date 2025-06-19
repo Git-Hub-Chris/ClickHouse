@@ -51,7 +51,7 @@ tqdm==4.66.4
 types-requests==2.32.0.20240622
 typing_extensions==4.12.2
 unidiff==0.7.5
-urllib3==2.3.0
+urllib3==2.5.0
 wheel==0.45.1
 wrapt==1.16.0
 yamllint==1.26.3
